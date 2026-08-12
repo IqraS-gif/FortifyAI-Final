@@ -1,0 +1,20 @@
+[
+  {
+    "timestamp": 1786536636.9520981,
+    "text": "Novel bypass injection attempt sample",
+    "label": 1,
+    "source": "unit_test",
+    "notes": "",
+    "status": "QUEUED",
+    "_id": "fallback_1786536636952_0"
+  },
+  {
+    "timestamp": 1786537295.097986,
+    "text": "Novel bypass injection attempt sample",
+    "label": 1,
+    "source": "unit_test",
+    "notes": "",
+    "status": "QUEUED",
+    "_id": "fallback_1786537295097_1"
+  }
+]

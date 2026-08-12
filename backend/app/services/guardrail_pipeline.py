@@ -1,3 +1,4 @@
+import re
 import time
 import logging
 from typing import Dict, Any, Optional, List
@@ -151,7 +152,7 @@ class GuardrailPipeline:
         for r in h_res["matched_rules"]:
             label = r["label"]
             desc = INDICATOR_DESCRIPTIONS.get(label, "Detected security pattern violating system guardrails")
-            quote = r.get("matched_text", raw_text[:40])
+            quote = r.get("matched_text", raw_text.strip()[:400])
             verdict = VERDICT_MAP.get(label, "→ Security boundary violation detected")
             structured_indicators.append({
                 "title": label,
@@ -162,9 +163,29 @@ class GuardrailPipeline:
             })
 
         if not structured_indicators and is_blocked:
+            # Extract exact threat text from document findings or raw text without truncation
+            doc_threat_text = ""
+            if doc_findings.get("invisible_text_findings"):
+                doc_threat_text = doc_findings["invisible_text_findings"][0].get("text", "")
+            elif doc_findings.get("metadata_findings"):
+                doc_threat_text = doc_findings["metadata_findings"][0].get("value", "")
+
+            if not doc_threat_text:
+                # Strip XML/HTML tags from raw_text before searching for injection payload
+                plain_text = re.sub(r'<\?[^?]*\?>', ' ', raw_text)           # strip <?xml...?>
+                plain_text = re.sub(r'<!--[\s\S]*?-->', ' ', plain_text)       # strip comments
+                plain_text = re.sub(r'<[^>]+>', ' ', plain_text)               # strip remaining tags
+                plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+                # Search for payload block or suspicious directive
+                m = re.search(r'(SYSTEM[\s\S]+|ignore[\s\S]+|override[\s\S]+|disregard[\s\S]+|return\s+strictly[\s\S]+)', plain_text, re.IGNORECASE)
+                if m and len(m.group(0).strip()) > 5:
+                    doc_threat_text = m.group(0).strip()[:500]
+                else:
+                    doc_threat_text = plain_text[:500]
+
             structured_indicators.append({
                 "title": "Directive Injection",
-                "quote": f'"{raw_text[:40]}..."',
+                "quote": f'"{doc_threat_text}"',
                 "verdict": "→ Explicit instruction attempting to bypass constraints",
                 "description": "Explicit instruction attempting to bypass safety constraints",
                 "severity": "HIGH"
@@ -214,16 +235,26 @@ class GuardrailPipeline:
             }
         }
 
-        # ── Log Scan Event to Database Audit Log
+        # ── Log Scan Event to Database Audit Log (MongoDB / Persistent Fallback)
         try:
             audit_log_coll = db_manager.get_collection("security_audit_logs")
             log_record = {
                 "timestamp": time.time(),
+                "datetime_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "action": "BLOCKED" if is_blocked else "ALLOWED",
                 "risk_score": final_risk_score,
                 "sensitivity_profile": sensitivity_profile,
-                "input_preview": raw_text[:200],
+                "human_summary": human_summary,
+                "structured_indicators": structured_indicators,
                 "matched_patterns": [r["label"] for r in h_res["matched_rules"]],
+                "modernbert_confidence": ml_res["confidence_score"],
+                "ml_explanation": ml_res.get("explanation", ""),
+                "document_threat_details": {
+                    "document_type": doc_findings.get("document_type", "NONE"),
+                    "metadata_findings": doc_findings.get("metadata_findings", []),
+                    "invisible_text_findings": doc_findings.get("invisible_text_findings", [])
+                },
+                "input_preview": raw_text[:300],
                 "total_duration_ms": total_duration_ms,
                 "within_sla": within_latency_budget,
                 "context": context
@@ -231,6 +262,20 @@ class GuardrailPipeline:
             audit_log_coll.insert_one(log_record)
         except Exception as err:
             logger.warning(f"Failed to log security audit record: {err}")
+
+        # ── Auto-feed successful detections into Continuous Re-Training Pool ─────
+        try:
+            if is_blocked and final_risk_score >= 75:
+                from app.services.continuous_retraining import retraining_service
+                retraining_service.capture_from_pipeline(
+                    raw_text=raw_text,
+                    action="BLOCKED",
+                    risk_score=float(final_risk_score),
+                    confidence=float(ml_res["confidence_score"]),
+                    matched_patterns=[r["label"] for r in h_res["matched_rules"]]
+                )
+        except Exception as retrain_err:
+            logger.debug(f"Retraining auto-capture skipped (non-critical): {retrain_err}")
 
         return explainable_report
 

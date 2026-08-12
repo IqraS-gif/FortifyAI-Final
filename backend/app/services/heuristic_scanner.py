@@ -212,10 +212,18 @@ class HeuristicScanner:
         for rule in self.compiled_rules:
             match = rule["regex"].search(surface_area)
             if match:
+                # Extract full context around the match: take the surrounding line(s) for readability
+                match_start = match.start()
+                match_end = match.end()
+                # Expand to surrounding line boundaries (up to 600 chars around match)
+                ctx_start = max(0, match_start - 100)
+                ctx_end = min(len(surface_area), match_end + 400)
+                full_context = surface_area[ctx_start:ctx_end].strip()
+
                 matched_rules.append({
                     "label": rule["label"],
                     "severity": rule["severity"],
-                    "matched_text": match.group(0)[:80]
+                    "matched_text": full_context
                 })
                 snippet = match.group(0)
                 if snippet not in highlight_snippets:

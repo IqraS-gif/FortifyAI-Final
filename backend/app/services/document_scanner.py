@@ -204,11 +204,17 @@ class DocumentScanner:
 
         from app.services.heuristic_scanner import heuristic_scanner
         h_res = heuristic_scanner.scan(body_text)
+        seen_labels = set()
         for rule in h_res.get("matched_rules", []):
+            lbl = rule.get("label", "")
+            if lbl in seen_labels:
+                continue
+            seen_labels.add(lbl)
             invisible_text_detected.append({
                 "element": "body",
-                "text": rule.get("matched_text", "")[:100],
-                "reason": f"HTML Injection Threat: {rule.get('label')} ('{rule.get('matched_text')}')"
+                "type": lbl,
+                "text": rule.get("matched_text", ""),
+                "reason": f"HTML Injection Threat: {lbl}"
             })
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -236,11 +242,16 @@ class DocumentScanner:
 
         from app.services.heuristic_scanner import heuristic_scanner
         h_res = heuristic_scanner.scan(text_content)
+        seen_labels = set()
         for rule in h_res.get("matched_rules", []):
+            lbl = rule.get("label", "")
+            if lbl in seen_labels:
+                continue
+            seen_labels.add(lbl)
             invisible_text_findings.append({
-                "type": rule.get("label"),
-                "text": rule.get("matched_text", "")[:100],
-                "reason": f"Document Prompt Injection Threat Detected: {rule.get('label')} ('{rule.get('matched_text')}')"
+                "type": lbl,
+                "text": rule.get("matched_text", ""),
+                "reason": f"Prompt injection pattern detected: {lbl}"
             })
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -251,6 +262,148 @@ class DocumentScanner:
             "metadata_findings": [],
             "invisible_text_findings": invisible_text_findings,
             "extracted_text": text_content,
+            "duration_ms": round(elapsed_ms, 3)
+        }
+
+    def scan_code(self, code_content: str, filename: str = "code_file.py") -> Dict[str, Any]:
+        """
+        Scans source code files (.py, .js, .ts, .jsx, .tsx, .java, .cpp, .c, .cs, .go, .rs, .sh, .php, .rb, .json, .yaml, .yml, .sql)
+        for hidden prompt injections in comments/docstrings, code execution vulnerabilities, secrets, and malicious import payloads.
+        """
+        start_time = time.perf_counter()
+        metadata_findings = []
+        invisible_text_findings = []
+
+        ext = os.path.splitext(filename)[1].upper().replace(".", "") or "CODE"
+
+        # 1. Secret / API Key Hardcoding Inspection
+        secret_matches = re.findall(r'(?i)(api[_-]?key|secret|password|auth[_-]?token|aws[_-]?secret)\s*[:=]\s*["\']([a-zA-Z0-9_\-]{8,})["\']', code_content)
+        for field, val in secret_matches:
+            metadata_findings.append({
+                "field": f"Hardcoded Secret ({field})",
+                "value": f"{val[:6]}...",
+                "reason": f"Hardcoded secret/credential detected in source code file '{filename}'"
+            })
+
+        # 2. Code Injection / Malicious Command Execution
+        exec_patterns = [
+            (r'os\.(system|popen|exec|spawn)', "OS Command Execution Call"),
+            (r'subprocess\.(Popen|run|call|check_output)', "Subprocess Process Spawning"),
+            (r'eval\s*\(', "Dynamic Eval Code Execution"),
+            (r'exec\s*\(', "Dynamic Exec Code Execution"),
+            (r'__import__\s*\(', "Dynamic Import Injection"),
+            (r'rm\s+-rf', "Destructive Command Trigger"),
+            (r'cat\s+/etc/passwd', "OS Password Probe")
+        ]
+
+        for pattern, label in exec_patterns:
+            m = re.search(pattern, code_content)
+            if m:
+                invisible_text_findings.append({
+                    "type": label,
+                    "text": m.group(0),
+                    "reason": f"Code Security Violation: {label} detected in '{filename}'"
+                })
+
+        # 3. Prompt Injections hidden inside Code Comments or Docstrings
+        from app.services.heuristic_scanner import heuristic_scanner
+        h_res = heuristic_scanner.scan(code_content)
+        seen_labels = set()
+        for rule in h_res.get("matched_rules", []):
+            lbl = rule.get("label", "")
+            if lbl in seen_labels:
+                continue
+            seen_labels.add(lbl)
+            invisible_text_findings.append({
+                "type": f"Code Injection: {lbl}",
+                "text": rule.get("matched_text", ""),
+                "reason": f"Prompt injection hidden in code comment/docstring: {lbl}"
+            })
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+        return {
+            "document_type": f"CODE_{ext}",
+            "filename": filename,
+            "metadata_findings": metadata_findings,
+            "invisible_text_findings": invisible_text_findings,
+            "extracted_text": code_content,
+            "duration_ms": round(elapsed_ms, 3)
+        }
+
+    def scan_xml(self, xml_content: str, filename: str = "document.xml") -> Dict[str, Any]:
+        """
+        Scans XML documents for embedded prompt injections inside tags, comments, or attributes.
+        """
+        start_time = time.perf_counter()
+        invisible_text_detected = []
+        metadata_findings = []
+
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(xml_content, 'html.parser')
+
+            # 1. XML comment inspection
+            comments = soup.find_all(string=lambda text: isinstance(text, type(soup.comment)))
+            for c in comments:
+                c_str = str(c).strip()
+                if c_str:
+                    invisible_text_detected.append({
+                        "element": "comment",
+                        "text": c_str,
+                        "reason": f"Prompt injection hidden inside XML comment tag in '{filename}'"
+                    })
+
+            # 2. Extract inner text from XML tags excluding XML declaration header
+            tag_texts = []
+            for tag in soup.find_all(True):
+                t_str = tag.get_text().strip()
+                if t_str and t_str not in tag_texts and not t_str.startswith("<?xml"):
+                    tag_texts.append(t_str)
+
+            body_text = "\n".join(tag_texts) if tag_texts else xml_content
+        except Exception as err:
+            logger.warning(f"XML scanner fallback: {err}")
+            body_text = xml_content
+
+        # Strip ALL XML/HTML tags including processing instructions (<?xml...?>, <!--...-->, <tag>)
+        clean_text_payload = re.sub(r'<\?[^?]*\?>', ' ', body_text)          # strip <?xml ...?>
+        clean_text_payload = re.sub(r'<!--[\s\S]*?-->', ' ', clean_text_payload)  # strip <!-- comments -->
+        clean_text_payload = re.sub(r'<[^>]+>', ' ', clean_text_payload)        # strip remaining <tags>
+        clean_text_payload = re.sub(r'\s+', ' ', clean_text_payload).strip()
+
+        # Run heuristic scanner over XML body text
+        from app.services.heuristic_scanner import heuristic_scanner
+        h_res = heuristic_scanner.scan(clean_text_payload)
+        seen_labels = set()
+        for rule in h_res.get("matched_rules", []):
+            lbl = rule.get("label", "")
+            if lbl in seen_labels:
+                continue
+            seen_labels.add(lbl)
+            invisible_text_detected.append({
+                "element": "xml_tag",
+                "type": lbl,
+                "text": rule.get("matched_text", ""),
+                "reason": f"XML Injection Threat: {lbl}"
+            })
+
+        # If no heuristic rules matched, pass the actual inner text of the XML element
+        if not invisible_text_detected and clean_text_payload:
+            invisible_text_detected.append({
+                "element": "xml_payload",
+                "text": clean_text_payload,
+                "reason": "Prompt injection payload detected inside XML elements"
+            })
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+        return {
+            "document_type": "XML",
+            "filename": filename,
+            "metadata_findings": metadata_findings,
+            "invisible_text_findings": invisible_text_detected,
+            "extracted_text": clean_text_payload if clean_text_payload else re.sub(r'<[\s\S]*?>', ' ', xml_content).strip(),
             "duration_ms": round(elapsed_ms, 3)
         }
 

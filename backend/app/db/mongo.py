@@ -94,7 +94,7 @@ class DatabaseManager:
         try:
             client = pymongo.MongoClient(
                 settings.MONGODB_URI,
-                serverSelectionTimeoutMS=1500
+                serverSelectionTimeoutMS=2500
             )
             # Test connection
             client.admin.command('ping')
@@ -107,6 +107,9 @@ class DatabaseManager:
             self.is_connected = False
 
     def get_collection(self, collection_name: str):
+        if not self.is_connected:
+            self.connect()
+
         if self.is_connected and self.db is not None:
             return self.db[collection_name]
         

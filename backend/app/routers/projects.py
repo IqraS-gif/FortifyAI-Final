@@ -12,21 +12,38 @@ class ProfileUpdateRequest(BaseModel):
     risk_threshold: float
     description: str
 
+def _format_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    d = dict(doc)
+    if "_id" in d:
+        d["_id"] = str(d["_id"])
+    return d
+
 @router.get("/")
 async def get_projects():
     """List available sensitivity profiles and deployment configs."""
-    coll = db_manager.get_collection("projects")
-    db_projects = coll.find()
-    
-    profiles = dict(settings.SENSITIVITY_PROFILES)
-    for p in db_projects:
-        profiles[p["profile_id"]] = p
+    try:
+        coll = db_manager.get_collection("projects")
+        cursor = coll.find()
+        db_projects = [_format_doc(p) for p in cursor]
+        
+        profiles = dict(settings.SENSITIVITY_PROFILES)
+        for p in db_projects:
+            pid = p.get("profile_id")
+            if pid:
+                profiles[pid] = p
 
-    return {
-        "status": "SUCCESS",
-        "default_profile": settings.DEFAULT_SENSITIVITY,
-        "profiles": profiles
-    }
+        return {
+            "status": "SUCCESS",
+            "default_profile": settings.DEFAULT_SENSITIVITY,
+            "profiles": profiles
+        }
+    except Exception as err:
+        return {
+            "status": "ERROR",
+            "message": str(err),
+            "default_profile": settings.DEFAULT_SENSITIVITY,
+            "profiles": dict(settings.SENSITIVITY_PROFILES)
+        }
 
 @router.post("/")
 async def update_project_profile(req: ProfileUpdateRequest):

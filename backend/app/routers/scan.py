@@ -40,12 +40,18 @@ async def scan_document_file(
     filename = file.filename or "uploaded_document"
     ext = filename.split(".")[-1].lower()
 
+    CODE_EXTENSIONS = {"py", "js", "ts", "jsx", "tsx", "java", "cpp", "c", "cs", "go", "rs", "sh", "php", "rb", "json", "yaml", "yml", "xml", "sql"}
+
     if ext == "pdf":
         doc_meta = document_scanner.scan_pdf(file_bytes, filename)
     elif ext in ["docx", "doc"]:
         doc_meta = document_scanner.scan_docx(file_bytes, filename)
     elif ext in ["html", "htm"]:
         doc_meta = document_scanner.scan_html(file_bytes.decode('utf-8', errors='ignore'), filename)
+    elif ext == "xml":
+        doc_meta = document_scanner.scan_xml(file_bytes.decode('utf-8', errors='ignore'), filename)
+    elif ext in CODE_EXTENSIONS:
+        doc_meta = document_scanner.scan_code(file_bytes.decode('utf-8', errors='ignore'), filename)
     else:
         doc_meta = document_scanner.scan_text(file_bytes.decode('utf-8', errors='ignore'), filename)
 
