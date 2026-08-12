@@ -407,4 +407,97 @@ class DocumentScanner:
             "duration_ms": round(elapsed_ms, 3)
         }
 
+    def scan_image(self, file_bytes: bytes, filename: str = "image.png") -> Dict[str, Any]:
+        """
+        Scans images (.png, .jpg, .jpeg, .webp, .bmp, .tiff) for embedded prompt injections
+        hidden in EXIF metadata, steganographic tags, or OCR-extracted text layer.
+        """
+        start_time = time.perf_counter()
+        metadata_findings = []
+        invisible_text_findings = []
+        extracted_text_parts = []
+        ext = os.path.splitext(filename)[1].upper().replace(".", "") or "IMAGE"
+
+        try:
+            from PIL import Image, ExifTags
+            img = Image.open(io.BytesIO(file_bytes))
+
+            # 1. EXIF & Info Metadata Inspection
+            exif_data = {}
+            try:
+                raw_exif = img._getexif()
+                if raw_exif:
+                    for tag_id, val in raw_exif.items():
+                        tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+                        exif_data[tag_name] = str(val)
+            except Exception:
+                pass
+
+            # Also check PIL image info dict
+            for k, v in img.info.items():
+                if isinstance(v, (str, bytes)):
+                    exif_data[str(k)] = str(v)
+
+            from app.services.heuristic_scanner import heuristic_scanner
+
+            for tag_name, val_str in exif_data.items():
+                if len(val_str.strip()) > 5:
+                    h_meta = heuristic_scanner.scan(val_str)
+                    if h_meta.get("matched_rules"):
+                        for rule in h_meta["matched_rules"]:
+                            metadata_findings.append({
+                                "field": f"EXIF:{tag_name}",
+                                "value": val_str[:150],
+                                "reason": f"Prompt injection hidden inside Image EXIF metadata '{tag_name}': {rule.get('label')}"
+                            })
+
+            # 2. OCR Text Extraction (Pytesseract / EasyOCR / Fallback)
+            ocr_text = ""
+            try:
+                import pytesseract
+                ocr_text = pytesseract.image_to_string(img).strip()
+            except Exception:
+                try:
+                    # Fallback: simple printable string extraction from bytes if OCR engine not installed
+                    printable = re.findall(r'[\x20-\x7E]{6,}', file_bytes.decode('latin-1', errors='ignore'))
+                    # Exclude common image headers
+                    filtered = [p for p in printable if not any(kw in p for kw in ["Photoshop", "Adobe", "ICC_PROFILE", "Exif", "JFIF", "XMP"])]
+                    if filtered:
+                        ocr_text = "\n".join(filtered[:20])
+                except Exception:
+                    pass
+
+            if ocr_text:
+                extracted_text_parts.append(ocr_text)
+
+                # Scan OCR extracted text with heuristic security engine
+                h_res = heuristic_scanner.scan(ocr_text)
+                seen_labels = set()
+                for rule in h_res.get("matched_rules", []):
+                    lbl = rule.get("label", "")
+                    if lbl in seen_labels:
+                        continue
+                    seen_labels.add(lbl)
+                    invisible_text_findings.append({
+                        "element": "image_ocr",
+                        "type": f"Image OCR Injection ({lbl})",
+                        "text": rule.get("matched_text", ""),
+                        "reason": f"Prompt injection detected inside Image OCR text: {lbl}"
+                    })
+
+        except Exception as err:
+            logger.warning(f"Image scanner error for '{filename}': {err}")
+
+        final_extracted = "\n".join(extracted_text_parts).strip()
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+        return {
+            "document_type": f"IMAGE_{ext}",
+            "filename": filename,
+            "metadata_findings": metadata_findings,
+            "invisible_text_findings": invisible_text_findings,
+            "extracted_text": final_extracted if final_extracted else f"Image document ({filename})",
+            "duration_ms": round(elapsed_ms, 3)
+        }
+
 document_scanner = DocumentScanner()

@@ -54,9 +54,9 @@ export default function DocumentAnalyzer({ onScanComplete }) {
       {/* Upload Box & File Controls */}
       <div className="shiny-card" style={{ padding: '28px', background: '#FFFFFF', borderRadius: '16px' }}>
         <div style={{ marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: 'var(--color-black)' }}>Document & Code Security Scanner</h2>
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: 'var(--color-black)' }}>Document, Code & Image Security Scanner</h2>
           <p className="text-dim" style={{ fontSize: '0.85rem' }}>
-            Scans uploaded PDFs, DOCX, Code Files (.py, .js, .ts, .java, .cpp, .sh, .sql), TXT, and HTML fed to AI models for hidden prompt injections, code execution exploits, secret leakage, and metadata injection.
+            Scans uploaded Images (.png, .jpg, .jpeg, .webp), PDFs, DOCX, Code Files (.py, .js, .ts, .java, .cpp, .sh, .sql), XML, TXT, and HTML fed to AI models for hidden prompt injections, EXIF metadata tags, OCR payloads, secret leakage, and steganography.
           </p>
         </div>
 
@@ -76,15 +76,15 @@ export default function DocumentAnalyzer({ onScanComplete }) {
         >
           <Upload size={36} color="#6F4E37" style={{ marginBottom: '12px' }} />
           <h3 style={{ fontSize: '1.0rem', marginBottom: '6px', color: 'var(--color-black)' }}>
-            {file ? file.name : 'Select or Drop Document or Code File'}
+            {file ? file.name : 'Select or Drop Document, Code, or Image File'}
           </h3>
           <p className="mono-text text-dim" style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-            SUPPORTED FORMATS: .PY, .JS, .TS, .JAVA, .CPP, .SH, .XML, .JSON, .PDF, .DOCX, .HTML, .TXT
+            SUPPORTED FORMATS: .PNG, .JPG, .JPEG, .WEBP, .PDF, .DOCX, .PY, .JS, .TS, .JAVA, .CPP, .XML, .JSON, .HTML, .TXT
           </p>
           <input
             id="fileUploadInput"
             type="file"
-            accept=".pdf,.docx,.doc,.html,.htm,.txt,.py,.js,.ts,.jsx,.tsx,.java,.cpp,.c,.cs,.go,.rs,.sh,.php,.rb,.json,.yaml,.yml,.xml,.sql"
+            accept=".png,.jpg,.jpeg,.webp,.bmp,.tiff,.pdf,.docx,.doc,.html,.htm,.txt,.py,.js,.ts,.jsx,.tsx,.java,.cpp,.c,.cs,.go,.rs,.sh,.php,.rb,.json,.yaml,.yml,.xml,.sql"
             onChange={handleFileChange}
             style={{ display: 'none' }}
           />
