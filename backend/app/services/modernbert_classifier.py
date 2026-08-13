@@ -26,7 +26,9 @@ class ModernBERTClassifierService:
         self.tokenizer = None
         self.is_loaded = False
         self.device = "cpu"
-        self._try_load_model()
+        # Load model asynchronously in background thread so Uvicorn boots up instantly (<100ms)
+        import threading
+        threading.Thread(target=self._try_load_model, daemon=True).start()
 
     def _try_load_model(self):
         """Attempts to load local fine-tuned ModernBERT or pretrained weights."""

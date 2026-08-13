@@ -36,6 +36,13 @@ async def get_stats():
     """
     return retraining_service.get_dataset_stats()
 
+@router.get("/samples")
+async def get_samples(limit: int = 25):
+    """
+    Retrieve live stream of queued & processed retraining samples.
+    """
+    return retraining_service.get_recent_samples(limit=limit)
+
 @router.post("/trigger")
 async def trigger_model_retrain():
     """
