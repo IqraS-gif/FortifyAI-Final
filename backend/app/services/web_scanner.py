@@ -233,6 +233,46 @@ class WebScanner:
             document_meta=doc_meta,
         )
 
+        # ── Step 8: Override structured_indicators with discrete per-threat findings ──
+        # Fixes generic "Page Source / NLP Model Detection" fallback by attaching exact
+        # location labels and unconcatenated evidence snippets for each finding.
+        specific_indicators = []
+        for t in confirmed_threats:
+            loc_raw = t.get("type", "DOM Element")
+            if "Comment" in loc_raw:
+                loc_label = "HTML Comment (<!-- -->)"
+            elif "CSS" in loc_raw or "Class" in loc_raw:
+                loc_label = "CSS Hidden Element (display:none)"
+            elif "JavaScript" in loc_raw or "script" in loc_raw:
+                loc_label = "JavaScript (<script> Tag)"
+            elif "Attribute" in loc_raw or "alt" in loc_raw:
+                loc_label = "HTML Attribute (alt / title)"
+            elif "Zero-Width" in loc_raw:
+                loc_label = "Zero-Width Unicode Characters"
+            elif "SVG" in loc_raw:
+                loc_label = "SVG Graphic Text Element"
+            elif "OCR" in loc_raw:
+                loc_label = "Screenshot OCR Text"
+            else:
+                loc_label = loc_raw
+
+            content_snippet = t.get("content", "").strip()
+            indicator_title = t.get("indicator", f"{loc_raw} Injection")
+            reason_desc = t.get("reason", f"Hidden instruction directive detected inside {loc_label}")
+
+            specific_indicators.append({
+                "title": indicator_title,
+                "location": loc_label,
+                "quote": f'"{content_snippet}"',
+                "evidence": content_snippet,
+                "description": reason_desc,
+                "verdict": "→ Security boundary violation detected",
+                "severity": "CRITICAL" if t.get("confidence") == "HIGH" else "HIGH"
+            })
+
+        if specific_indicators:
+            pipeline_result["structured_indicators"] = specific_indicators
+
         pipeline_result["web_scan"] = {
             "url": url,
             "page_title": page_title,
