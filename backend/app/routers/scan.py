@@ -3,8 +3,13 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from app.services.guardrail_pipeline import guardrail_pipeline
 from app.services.document_scanner import document_scanner
+from app.services.web_scanner import web_scanner
 
 router = APIRouter(prefix="/scan", tags=["Scan"])
+
+class UrlScanRequest(BaseModel):
+    url: str
+    sensitivity_profile: Optional[str] = "BALANCED"
 
 class TextScanRequest(BaseModel):
     prompt: str
@@ -66,4 +71,28 @@ async def scan_document_file(
         document_meta=doc_meta
     )
     
+    return result
+
+
+@router.post("/url")
+async def scan_url(req: UrlScanRequest):
+    """
+    Scan a public URL for indirect prompt injection threats.
+    Fetches the page via Playwright, analyzes hidden DOM content, CSS tricks,
+    HTML comments, attribute payloads, and runs OCR on the rendered screenshot.
+    """
+    if not req.url or not req.url.strip():
+        raise HTTPException(status_code=400, detail="URL cannot be empty.")
+
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    try:
+        result = await web_scanner.scan_url(url, sensitivity_profile=req.sensitivity_profile or "BALANCED")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Web scan failed: {str(e)}")
+
     return result

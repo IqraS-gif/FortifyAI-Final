@@ -440,28 +440,81 @@ class DocumentScanner:
 
             from app.services.heuristic_scanner import heuristic_scanner
 
-            for tag_name, val_str in exif_data.items():
-                if len(val_str.strip()) > 5:
-                    h_meta = heuristic_scanner.scan(val_str)
-                    if h_meta.get("matched_rules"):
-                        for rule in h_meta["matched_rules"]:
-                            metadata_findings.append({
-                                "field": f"EXIF:{tag_name}",
-                                "value": val_str[:150],
-                                "reason": f"Prompt injection hidden inside Image EXIF metadata '{tag_name}': {rule.get('label')}"
-                            })
+            seen_exif_fields = set()
+            # Non-instructional metadata strings (C2PA content credentials, ICC profiles, Adobe tags)
+            PROVENANCE_KEYWORDS = ["c2pa", "digitalsourcetype", "trainedalgorithmicmedia", "icc_profile", "photoshop", "xmp"]
 
-            # 2. OCR Text Extraction (Pytesseract / EasyOCR / Fallback)
+            for tag_name, val_str in exif_data.items():
+                if tag_name in seen_exif_fields:
+                    continue
+                val_clean = val_str.strip()
+                if len(val_clean) > 5:
+                    val_lower = val_clean.lower()
+                    # Skip C2PA provenance and standard metadata tags if they contain no explicit instruction override directives
+                    is_provenance = any(p_kw in val_lower for p_kw in PROVENANCE_KEYWORDS)
+                    has_instruction_directive = any(kw in val_lower for kw in ["ignore", "override", "system", "disregard", "secret", "jailbreak", "return strictly", "instruction"])
+                    
+                    if is_provenance and not has_instruction_directive:
+                        continue
+
+                    h_meta = heuristic_scanner.scan(val_clean)
+                    if h_meta.get("matched_rules"):
+                        seen_exif_fields.add(tag_name)
+                        first_rule = h_meta["matched_rules"][0]
+                        metadata_findings.append({
+                            "field": f"EXIF:{tag_name}",
+                            "value": val_clean[:150],
+                            "reason": f"Prompt injection hidden inside Image EXIF metadata '{tag_name}': {first_rule.get('label')}"
+                        })
+
+            # 2. OCR Text Extraction (Pytesseract / Dual-Pass Enhanced OCR / Fallback)
             ocr_text = ""
             try:
                 import pytesseract
-                ocr_text = pytesseract.image_to_string(img).strip()
-            except Exception:
+                from PIL import ImageEnhance, ImageOps
+
+                # Auto-locate Tesseract executable binary on Windows
+                tess_paths = [
+                    r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                    r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+                    os.path.expanduser(r'~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe')
+                ]
+                for p in tess_paths:
+                    if os.path.exists(p):
+                        pytesseract.pytesseract.tesseract_cmd = p
+                        break
+
+                # Pass 1: Standard OCR (Auto Page Segmentation)
+                raw_ocr = pytesseract.image_to_string(img, config='--psm 3').strip()
+
+                # Pass 2: Upscaled 2.5x + Sparse Text PSM 11 (Extracts tiny footer / margin text)
+                try:
+                    w, h = img.size
+                    scaled_img = img.resize((int(w * 2.5), int(h * 2.5)), Image.Resampling.LANCZOS)
+                    gray_img = scaled_img.convert('L')
+                    
+                    # Sparse text mode for small footer notes
+                    sparse_ocr = pytesseract.image_to_string(gray_img, config='--psm 11').strip()
+                except Exception:
+                    sparse_ocr = ""
+
+                # Pass 3: Contrast-Enhanced + PSM 6 (High contrast thresholding for faint/gray text)
+                try:
+                    enhancer = ImageEnhance.Contrast(gray_img)
+                    contrast_img = enhancer.enhance(2.5)
+                    contrast_ocr = pytesseract.image_to_string(contrast_img, config='--psm 6').strip()
+                except Exception:
+                    contrast_ocr = ""
+
+                ocr_text = f"{raw_ocr}\n{sparse_ocr}\n{contrast_ocr}".strip()
+            except Exception as ocr_err:
+                logger.debug(f"Pytesseract OCR fallback: {ocr_err}")
                 try:
                     # Fallback: simple printable string extraction from bytes if OCR engine not installed
                     printable = re.findall(r'[\x20-\x7E]{6,}', file_bytes.decode('latin-1', errors='ignore'))
-                    # Exclude common image headers
-                    filtered = [p for p in printable if not any(kw in p for kw in ["Photoshop", "Adobe", "ICC_PROFILE", "Exif", "JFIF", "XMP"])]
+                    # Exclude common image metadata headers and C2PA provenance strings from extracted body text
+                    metadata_kws = ["photoshop", "adobe", "icc_profile", "exif", "jfif", "xmp", "c2pa", "digitalsourcetype", "trainedalgorithmicmedia"]
+                    filtered = [p for p in printable if not any(kw in p.lower() for kw in metadata_kws)]
                     if filtered:
                         ocr_text = "\n".join(filtered[:20])
                 except Exception:

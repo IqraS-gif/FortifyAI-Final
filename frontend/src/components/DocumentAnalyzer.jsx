@@ -9,12 +9,36 @@ export default function DocumentAnalyzer({ onScanComplete }) {
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selectedThreat, setSelectedThreat] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
       handleDocumentScan(selectedFile);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0];
+      setFile(droppedFile);
+      handleDocumentScan(droppedFile);
     }
   };
 
@@ -56,31 +80,33 @@ export default function DocumentAnalyzer({ onScanComplete }) {
         <div style={{ marginBottom: '20px' }}>
           <h2 style={{ fontSize: '1.2rem', marginBottom: '4px', color: 'var(--color-black)' }}>Document, Code & Image Security Scanner</h2>
           <p className="text-dim" style={{ fontSize: '0.85rem' }}>
-            Scans uploaded Images (.png, .jpg, .jpeg, .webp), PDFs, DOCX, Code Files (.py, .js, .ts, .java, .cpp, .sh, .sql), XML, TXT, and HTML fed to AI models for hidden prompt injections, EXIF metadata tags, OCR payloads, secret leakage, and steganography.
+            Scans uploaded files fed to AI models for hidden prompt injections, EXIF metadata tags, OCR payloads, secret leakage, and steganography.
           </p>
         </div>
 
         {/* Dropzone */}
         <div
           style={{
-            border: '2px dashed #6F4E37',
+            border: `2px dashed ${isDragging ? '#C53030' : '#6F4E37'}`,
             borderRadius: '10px',
             padding: '36px 20px',
             textAlign: 'center',
-            background: '#FDFBF7',
+            background: isDragging ? '#FDF2F2' : '#FDFBF7',
             cursor: 'pointer',
             marginBottom: '20px',
-            transition: 'all 0.2s ease'
+            transition: 'all 0.2s ease',
+            boxShadow: isDragging ? '0 0 15px rgba(197, 48, 48, 0.15)' : 'none'
           }}
           onClick={() => document.getElementById('fileUploadInput').click()}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
-          <Upload size={36} color="#6F4E37" style={{ marginBottom: '12px' }} />
-          <h3 style={{ fontSize: '1.0rem', marginBottom: '6px', color: 'var(--color-black)' }}>
-            {file ? file.name : 'Select or Drop Document, Code, or Image File'}
+          <Upload size={36} color={isDragging ? '#C53030' : '#6F4E37'} style={{ marginBottom: '12px', transition: 'transform 0.2s ease', transform: isDragging ? 'scale(1.15)' : 'scale(1)' }} />
+          <h3 style={{ fontSize: '1.0rem', marginBottom: '6px', color: isDragging ? '#C53030' : 'var(--color-black)' }}>
+            {isDragging ? 'Drop File to Instantly Scan' : (file ? file.name : 'Select or Drop Document, Code, or Image File')}
           </h3>
-          <p className="mono-text text-dim" style={{ fontSize: '0.75rem', fontWeight: 600 }}>
-            SUPPORTED FORMATS: .PNG, .JPG, .JPEG, .WEBP, .PDF, .DOCX, .PY, .JS, .TS, .JAVA, .CPP, .XML, .JSON, .HTML, .TXT
-          </p>
+
           <input
             id="fileUploadInput"
             type="file"
@@ -245,7 +271,9 @@ export default function DocumentAnalyzer({ onScanComplete }) {
               </div>
               {result.document_threat_details?.invisible_text_findings && result.document_threat_details.invisible_text_findings.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {result.document_threat_details.invisible_text_findings.map((inv, idx) => (
+                  {result.document_threat_details.invisible_text_findings
+                    .filter((inv, idx, arr) => arr.findIndex(x => (x.type || x.element) === (inv.type || inv.element)) === idx)
+                    .map((inv, idx) => (
                     <div
                       key={idx}
                       style={{ background: '#F8F9FA', border: '1px solid #E2E8F0', padding: '12px 14px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s ease' }}
@@ -286,7 +314,9 @@ export default function DocumentAnalyzer({ onScanComplete }) {
               </div>
               {result.document_threat_details?.metadata_findings && result.document_threat_details.metadata_findings.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {result.document_threat_details.metadata_findings.map((m, idx) => (
+                  {result.document_threat_details.metadata_findings
+                    .filter((m, idx, arr) => arr.findIndex(x => x.field === m.field) === idx)
+                    .map((m, idx) => (
                     <div
                       key={idx}
                       style={{ background: '#F8F9FA', border: '1px solid #E2E8F0', padding: '12px 14px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s ease' }}

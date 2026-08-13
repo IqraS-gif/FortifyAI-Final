@@ -1,10 +1,11 @@
 import React from 'react';
-import { Shield, Activity, Sliders, RefreshCw, FileSearch, Lock, LogOut } from 'lucide-react';
+import { Shield, Activity, Sliders, RefreshCw, FileSearch, Lock, LogOut, Globe } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab, userRole, onLoginClick, onLogoutClick }) {
   const userTabs = [
     { id: 'scanner', label: 'Prompt Scanner', icon: Shield },
     { id: 'document', label: 'Document Analyzer', icon: FileSearch },
+    { id: 'webscanner', label: 'Web URL Scanner', icon: Globe },
   ];
 
   const adminTabs = [

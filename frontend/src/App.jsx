@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import PromptScanner from './components/PromptScanner';
 import DocumentAnalyzer from './components/DocumentAnalyzer';
+import WebScanner from './components/WebScanner';
 import SensitivityManager from './components/SensitivityManager';
 import RetrainingHub from './components/RetrainingHub';
 import AuditAnalytics from './components/AuditAnalytics';
@@ -53,6 +54,11 @@ export default function App() {
             )}
             {activeTab === 'document' && (
               <DocumentAnalyzer
+                onScanComplete={(res) => setLastScanResult(res)}
+              />
+            )}
+            {activeTab === 'webscanner' && (
+              <WebScanner
                 onScanComplete={(res) => setLastScanResult(res)}
               />
             )}

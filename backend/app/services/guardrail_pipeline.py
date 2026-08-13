@@ -60,14 +60,23 @@ class GuardrailPipeline:
         else:
             final_risk_score = int(max(h_score, ml_score, doc_risk))
 
+        # ── False Positive Guard: If ML flagged but NO heuristic rules or document threats exist,
+        # require ML score >= 88.0 and text length >= 15 to block, avoiding false positives on short UI strings
+        has_heuristic_match = len(h_res.get("matched_rules", [])) > 0
+        has_doc_threat = len(doc_findings.get("invisible_text_findings", [])) > 0 or len(doc_findings.get("metadata_findings", [])) > 0
+
+        if not has_heuristic_match and not has_doc_threat:
+            if ml_score < 88.0 or len(raw_text.strip()) < 15:
+                ml_res["is_injection"] = False
+                final_risk_score = min(final_risk_score, 45)
+
         final_risk_score = min(max(final_risk_score, 0), 100)
 
         # Decision Logic
         is_blocked = (
             h_res["severity"] == "CRITICAL" or
             final_risk_score >= effective_threshold or
-            len(doc_findings.get("invisible_text_findings", [])) > 0 or
-            len(doc_findings.get("metadata_findings", [])) > 0
+            has_doc_threat
         )
 
         total_duration_ms = round((time.perf_counter() - pipeline_start) * 1000.0, 2)
@@ -98,7 +107,7 @@ class GuardrailPipeline:
                 human_summary = "The prompt attempted to probe for and exfiltrate internal system secrets, environment keys, or user credentials."
             elif any("Output Hijacking" in l or "Exfiltration" in l or "Redirection" in l for l in matched_labels):
                 human_summary = "The input contained an indirect prompt injection attempting to hijack output responses and exfiltrate user data."
-            elif doc_findings.get("invisible_text_findings") or doc_findings.get("metadata_findings"):
+            elif has_doc_threat:
                 human_summary = "The uploaded document contained hidden invisible text or metadata fields engineered to secretly manipulate AI instructions."
             elif ml_res["is_injection"]:
                 human_summary = f"The ModernBERT AI classifier detected a high-probability prompt injection pattern with {ml_res['confidence_score']:.1%} confidence."
@@ -163,32 +172,34 @@ class GuardrailPipeline:
             })
 
         if not structured_indicators and is_blocked:
-            # Extract exact threat text from document findings or raw text without truncation
+            # Extract threat text from document findings or raw text
             doc_threat_text = ""
             if doc_findings.get("invisible_text_findings"):
                 doc_threat_text = doc_findings["invisible_text_findings"][0].get("text", "")
             elif doc_findings.get("metadata_findings"):
                 doc_threat_text = doc_findings["metadata_findings"][0].get("value", "")
 
-            if not doc_threat_text:
-                # Strip XML/HTML tags from raw_text before searching for injection payload
-                plain_text = re.sub(r'<\?[^?]*\?>', ' ', raw_text)           # strip <?xml...?>
-                plain_text = re.sub(r'<!--[\s\S]*?-->', ' ', plain_text)       # strip comments
-                plain_text = re.sub(r'<[^>]+>', ' ', plain_text)               # strip remaining tags
+            if doc_threat_text:
+                title = "Document Directive Injection"
+                desc = "Document contains hidden prompt injection directive engineered to alter model behavior."
+                verdict = "→ Security boundary violation detected"
+            else:
+                plain_text = re.sub(r'<\?[^?]*\?>', ' ', raw_text)
+                plain_text = re.sub(r'<!--[\s\S]*?-->', ' ', plain_text)
+                plain_text = re.sub(r'<[^>]+>', ' ', plain_text)
                 plain_text = re.sub(r'\s+', ' ', plain_text).strip()
-                # Search for payload block or suspicious directive
-                m = re.search(r'(SYSTEM[\s\S]+|ignore[\s\S]+|override[\s\S]+|disregard[\s\S]+|return\s+strictly[\s\S]+)', plain_text, re.IGNORECASE)
-                if m and len(m.group(0).strip()) > 5:
-                    doc_threat_text = m.group(0).strip()[:500]
-                else:
-                    doc_threat_text = plain_text[:500]
+                doc_threat_text = plain_text[:500]
+
+                title = "Statistical ML Sequence Anomaly"
+                desc = "ModernBERT classifier flagged high variance sequence pattern requiring validation."
+                verdict = "→ Potential false positive — requires semantic validation"
 
             structured_indicators.append({
-                "title": "Directive Injection",
+                "title": title,
                 "quote": f'"{doc_threat_text}"',
-                "verdict": "→ Explicit instruction attempting to bypass constraints",
-                "description": "Explicit instruction attempting to bypass safety constraints",
-                "severity": "HIGH"
+                "verdict": verdict,
+                "description": desc,
+                "severity": "HIGH" if doc_threat_text else "MEDIUM"
             })
 
         explainable_report = {

@@ -3,8 +3,9 @@ import json
 import logging
 import time
 from typing import Dict, List, Any, Optional
+import certifi
 import pymongo
-from pymongo.errors import ServerSelectionTimeoutError
+from pymongo.errors import ServerSelectionTimeoutError, ConfigurationError
 from app.config import settings
 
 logger = logging.getLogger("fortifyai.db")
@@ -91,20 +92,35 @@ class DatabaseManager:
         self.fallback_collections: Dict[str, InMemoryMongoFallbackCollection] = {}
 
     def connect(self):
-        try:
-            client = pymongo.MongoClient(
-                settings.MONGODB_URI,
-                serverSelectionTimeoutMS=2500
-            )
-            # Test connection
-            client.admin.command('ping')
-            self.client = client
-            self.db = client[settings.DB_NAME]
-            self.is_connected = True
-            logger.info(f"Connected to MongoDB at {settings.MONGODB_URI} [DB: {settings.DB_NAME}]")
-        except (ServerSelectionTimeoutError, Exception) as err:
-            logger.warning(f"MongoDB connection unavailable ({err}). Using persistent embedded storage fallback.")
-            self.is_connected = False
+        """Attempt MongoDB Atlas connection with certifi CA bundle for Python 3.13+ TLS compatibility."""
+        uri = settings.MONGODB_URI
+
+        connect_kwargs = dict(
+            host=uri,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=20000,
+            tls=True,
+            tlsCAFile=certifi.where(),
+            retryWrites=True,
+        )
+
+        for attempt in range(1, 4):
+            try:
+                client = pymongo.MongoClient(**connect_kwargs)
+                client.admin.command('ping')
+                self.client = client
+                self.db = client[settings.DB_NAME]
+                self.is_connected = True
+                logger.info(f"Connected to MongoDB Atlas [DB: {settings.DB_NAME}] on attempt {attempt}")
+                return
+            except (ServerSelectionTimeoutError, ConfigurationError, Exception) as err:
+                logger.warning(f"MongoDB connection attempt {attempt}/3 failed: {type(err).__name__}: {str(err)[:200]}")
+                if attempt < 3:
+                    time.sleep(attempt * 1.5)
+
+        logger.warning("MongoDB unavailable after 3 attempts. Using persistent embedded storage fallback.")
+        self.is_connected = False
 
     def get_collection(self, collection_name: str):
         if not self.is_connected:

@@ -1478,5 +1478,49 @@
     "within_sla": false,
     "context": {},
     "_id": "fallback_1786552204631_103"
+  },
+  {
+    "timestamp": 1786591446.3251455,
+    "datetime_iso": "2026-08-13T03:24:06Z",
+    "action": "ALLOWED",
+    "risk_score": 45,
+    "sensitivity_profile": "BALANCED",
+    "human_summary": "The input successfully passed all security layers and contains no malicious instruction overrides.",
+    "structured_indicators": [],
+    "matched_patterns": [],
+    "modernbert_confidence": 0.571,
+    "ml_explanation": "",
+    "document_threat_details": {
+      "document_type": "CHAT_INPUT",
+      "metadata_findings": [],
+      "invisible_text_findings": []
+    },
+    "input_preview": "\u00abReact \u00abReact React",
+    "total_duration_ms": 1674.44,
+    "within_sla": false,
+    "context": {},
+    "_id": "fallback_1786591446325_104"
+  },
+  {
+    "timestamp": 1786591547.836702,
+    "datetime_iso": "2026-08-13T03:25:47Z",
+    "action": "ALLOWED",
+    "risk_score": 45,
+    "sensitivity_profile": "BALANCED",
+    "human_summary": "The input successfully passed all security layers and contains no malicious instruction overrides.",
+    "structured_indicators": [],
+    "matched_patterns": [],
+    "modernbert_confidence": 0.6824,
+    "ml_explanation": "",
+    "document_threat_details": {
+      "document_type": "IMAGE_JPG",
+      "metadata_findings": [],
+      "invisible_text_findings": []
+    },
+    "input_preview": "\u00abReact\n\u00abReact\nReact",
+    "total_duration_ms": 1233.62,
+    "within_sla": false,
+    "context": {},
+    "_id": "fallback_1786591547836_105"
   }
 ]
