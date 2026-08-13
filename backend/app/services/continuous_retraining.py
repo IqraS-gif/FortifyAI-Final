@@ -164,10 +164,12 @@ class ContinuousReTrainingService:
         Called by guardrail_pipeline after every BLOCKED verdict to auto-feed
         successful attack detections into the retraining pool.
         Only captures high-confidence attacks (risk_score >= 75) to avoid noise.
+        Generates adversarial variants (leet, homoglyphs, base64, zero-width) automatically.
         """
         if action == "BLOCKED" and risk_score >= 75:
             attack_type = matched_patterns[0] if matched_patterns else "UNKNOWN"
             try:
+                # 1. Submit original attack text
                 self.submit_feedback(
                     prompt_text=raw_text,
                     label=1,
@@ -176,6 +178,19 @@ class ContinuousReTrainingService:
                     confidence=confidence,
                     attack_type=attack_type
                 )
+                
+                # 2. Generate and submit adversarial variants for robustness
+                from app.services.adversarial_augmentor import adversarial_augmentor
+                variants = adversarial_augmentor.augment(raw_text, label=1, max_variants=3)
+                for var in variants:
+                    self.submit_feedback(
+                        prompt_text=var["text"],
+                        label=1,
+                        source=f"adversarial_aug_{var['augmentation_type']}",
+                        notes=f"Adversarial variant ({var['augmentation_type']}) of attack: {raw_text[:60]}...",
+                        confidence=confidence,
+                        attack_type=attack_type
+                    )
             except Exception as e:
                 logger.debug(f"Auto-capture failed (non-critical): {e}")
 

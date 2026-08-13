@@ -84,6 +84,33 @@ def prepare_dataset():
     except Exception as e:
         logger.warning(f"Kaggle download exception (will use fallback/HF dataset if kaggle credentials omitted): {e}")
 
+    # 4. Local Continuous Retraining Pool & MongoDB Audit Logs
+    logger.info("Loading local continuous retraining pool & MongoDB logs...")
+    try:
+        pool_csv = os.path.join(os.path.dirname(__file__), "..", "..", "data_storage", "retraining_pool.csv")
+        if os.path.exists(pool_csv):
+            df_pool = pd.read_csv(pool_csv)
+            for _, r in df_pool.iterrows():
+                t = r.get("text")
+                l = r.get("label")
+                if pd.notna(t) and pd.notna(l):
+                    all_rows.append({"text": str(t), "label": int(l)})
+            logger.info(f"Loaded {len(df_pool)} samples from local CSV pool.")
+    except Exception as e:
+        logger.warning(f"Error loading local CSV pool: {e}")
+
+    try:
+        from app.db.mongo import db_manager
+        coll = db_manager.get_collection("retraining_samples")
+        if coll is not None:
+            mongo_samples = list(coll.find({}, {"text": 1, "label": 1}))
+            for ms in mongo_samples:
+                if ms.get("text") and ms.get("label") is not None:
+                    all_rows.append({"text": str(ms["text"]), "label": int(ms["label"])})
+            logger.info(f"Loaded {len(mongo_samples)} samples from MongoDB retraining_samples.")
+    except Exception as e:
+        logger.warning(f"Error loading MongoDB retraining samples: {e}")
+
     # If empty, add synthetic baseline prompt injection samples for robustness
     if len(all_rows) == 0:
         logger.info("Using baseline benchmark prompts dataset...")
@@ -96,8 +123,18 @@ def prepare_dataset():
             {"text": "Write a fast dynamic programming algorithm for knapsack.", "label": 0}
         ]
 
+    # 5. Apply Adversarial Augmentation (leet, base64, homoglyphs, zero-width, paraphrasing)
+    logger.info("Generating adversarial obfuscation variants for injection samples...")
+    try:
+        from app.services.adversarial_augmentor import adversarial_augmentor
+        augmented_rows = adversarial_augmentor.augment_batch(all_rows, max_variants_per_sample=2)
+        all_rows.extend(augmented_rows)
+        logger.info(f"Generated {len(augmented_rows)} adversarial variants.")
+    except Exception as e:
+        logger.warning(f"Adversarial augmentation skipped: {e}")
+
     df_combined = pd.DataFrame(all_rows).drop_duplicates(subset=["text"])
-    logger.info(f"Final merged dataset size: {len(df_combined)} samples.")
+    logger.info(f"Final merged dataset size (with adversarial variants): {len(df_combined)} samples.")
     return Dataset.from_pandas(df_combined)
 
 def train_modernbert(output_dir: str = None):
