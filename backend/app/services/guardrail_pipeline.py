@@ -7,6 +7,8 @@ from app.services.heuristic_scanner import heuristic_scanner
 from app.services.modernbert_classifier import modernbert_classifier
 from app.services.document_scanner import document_scanner
 from app.db.mongo import db_manager
+from app.services.text_preprocessor import text_preprocessor
+from app.services.threat_db import threat_db
 
 logger = logging.getLogger("fortifyai.pipeline")
 
@@ -27,16 +29,37 @@ class GuardrailPipeline:
     ) -> Dict[str, Any]:
         pipeline_start = time.perf_counter()
         context = context or {}
-        
+
+        # ── Enhancement A: Decode-then-scan preprocessing ──────────────────
+        # Normalize obfuscated text (base64, homoglyphs, zero-width, RTL, hex)
+        # BEFORE any heuristic or ML evaluation.
+        pre = text_preprocessor.preprocess(raw_text)
+        normalized_text = pre["normalized_text"]
+        obfuscation_flags = pre["obfuscation_flags"]
+        obfuscation_risk_boost = pre["obfuscation_risk_boost"]
+
         # 1. Determine Effective Risk Threshold
         profile_info = settings.SENSITIVITY_PROFILES.get(sensitivity_profile, settings.SENSITIVITY_PROFILES["BALANCED"])
         effective_threshold = custom_threshold if custom_threshold is not None else profile_info["risk_threshold"]
 
-        # ── Stage 1: Heuristic & Regex Scanner Layer (<5ms)
-        h_res = heuristic_scanner.scan(raw_text)
+        # ── Stage 1: Heuristic & Regex Scanner Layer (<5ms) — on normalized text
+        h_res = heuristic_scanner.scan(normalized_text)
 
-        # ── Stage 2: ModernBERT ML Classifier Layer (<40ms)
-        ml_res = modernbert_classifier.predict(h_res["normalized_text"])
+        # ── Enhancement B: Sliding Window for long documents ───────────────
+        # If text > 500 words, also scan every 200-word window with step 100.
+        # An injection buried on page 47 of a PDF won't dilute below threshold.
+        sliding_h_res = None
+        sliding_ml_res = None
+        if len(normalized_text.split()) > 500:
+            sliding_h_res, sliding_ml_res = self._sliding_window_scan(normalized_text)
+
+        # ── Stage 2: ModernBERT ML Classifier Layer (<40ms) — on normalized text
+        ml_res = modernbert_classifier.predict(normalized_text)
+
+        # ── Enhancement C: Embedding Similarity against Threat DB ──────────
+        # Query the known-injection vector database for semantic paraphrases.
+        # Uses ModernBERT CLS embeddings (or TF-IDF fallback).
+        similarity_res = threat_db.query(normalized_text[:1000])  # Only first 1k chars
 
         # ── Stage 3: Document Layer Findings (if attached)
         doc_findings = document_meta or {
@@ -46,9 +69,18 @@ class GuardrailPipeline:
             "duration_ms": 0.0
         }
 
-        # Calculate Combined Risk Score (0 - 100)
+        # ── Calculate Combined Risk Score (0 - 100) ──────────────────────────
         h_score = h_res["risk_score"]
         ml_score = ml_res["risk_score"]
+
+        # Merge sliding window results — take the worst window
+        if sliding_h_res:
+            h_score = max(h_score, sliding_h_res["risk_score"])
+            if sliding_h_res["matched_rules"] and not h_res["matched_rules"]:
+                h_res["matched_rules"] = sliding_h_res["matched_rules"]
+        if sliding_ml_res:
+            ml_score = max(ml_score, sliding_ml_res["risk_score"])
+
         doc_risk = 0.0
         if doc_findings.get("metadata_findings"):
             doc_risk += 50.0
@@ -59,6 +91,14 @@ class GuardrailPipeline:
             final_risk_score = max(95, int(h_score), int(ml_score), int(doc_risk))
         else:
             final_risk_score = int(max(h_score, ml_score, doc_risk))
+
+        # Apply obfuscation risk boost (from preprocessing)
+        if obfuscation_risk_boost > 0:
+            final_risk_score = min(100, final_risk_score + obfuscation_risk_boost)
+
+        # Apply embedding similarity boost (Enhancement C)
+        if similarity_res["matched"]:
+            final_risk_score = min(100, final_risk_score + similarity_res["similarity_risk_boost"])
 
         # ── False Positive Guard: If ML flagged but NO heuristic rules or document threats exist,
         # require ML score >= 88.0 and text length >= 15 to block, avoiding false positives on short UI strings
@@ -161,11 +201,12 @@ class GuardrailPipeline:
         for r in h_res["matched_rules"]:
             label = r["label"]
             desc = INDICATOR_DESCRIPTIONS.get(label, "Detected security pattern violating system guardrails")
-            quote = r.get("matched_text", raw_text.strip()[:400])
+            raw_match = r.get("matched_text") or raw_text.strip()[:600]
             verdict = VERDICT_MAP.get(label, "→ Security boundary violation detected")
             structured_indicators.append({
                 "title": label,
-                "quote": f'"{quote}"',
+                "quote": f'"{raw_match}"',
+                "evidence": raw_match,
                 "verdict": verdict,
                 "description": desc,
                 "severity": r.get("severity", "CRITICAL")
@@ -289,5 +330,42 @@ class GuardrailPipeline:
             logger.debug(f"Retraining auto-capture skipped (non-critical): {retrain_err}")
 
         return explainable_report
+
+    def _sliding_window_scan(self, text: str, window_words: int = 200, step_words: int = 100):
+        """
+        Enhancement B: Sliding window evaluation for long documents.
+        Splits text into overlapping windows of `window_words` words with `step_words` stride.
+        Returns the worst-case (highest risk) heuristic and ML results across all windows.
+        This ensures an injection buried deep in a long document isn't diluted below threshold.
+        """
+        words = text.split()
+        if len(words) <= window_words:
+            return None, None  # Short enough to evaluate as-is
+
+        best_h_res = None
+        best_ml_res = None
+        best_h_score = 0.0
+        best_ml_score = 0.0
+
+        i = 0
+        while i < len(words):
+            window = " ".join(words[i: i + window_words])
+            try:
+                h = heuristic_scanner.scan(window)
+                if h["risk_score"] > best_h_score:
+                    best_h_score = h["risk_score"]
+                    best_h_res = h
+                # Only run ML on windows that heuristics flagged (performance)
+                if h["risk_score"] >= 40:
+                    ml = modernbert_classifier.predict(window)
+                    if ml["risk_score"] > best_ml_score:
+                        best_ml_score = ml["risk_score"]
+                        best_ml_res = ml
+            except Exception:
+                pass
+            i += step_words
+
+        return best_h_res, best_ml_res
+
 
 guardrail_pipeline = GuardrailPipeline()

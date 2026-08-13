@@ -14,7 +14,7 @@ os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 # Prevent transformers from probing tensorflow's protobuf
 sys.modules["tensorflow"] = None
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("fortifyai.ml")
 
@@ -145,5 +145,35 @@ class ModernBERTClassifierService:
             "explanation": ml_explanation,
             "duration_ms": round(elapsed_ms, 3)
         }
+
+    def embed(self, text: str) -> Optional[List[float]]:
+        """
+        Extract the [CLS] token hidden state from ModernBERT as a float list.
+        Used by ThreatDatabase for cosine similarity matching.
+        Returns None if model is not loaded.
+        """
+        if not self.is_loaded or not self.model or not self.tokenizer:
+            return None
+        try:
+            import torch
+            inputs = self.tokenizer(
+                text,
+                padding=True,
+                truncation=True,
+                max_length=128,
+                return_tensors="pt"
+            ).to(self.device)
+            with torch.no_grad():
+                outputs = self.model(**inputs, output_hidden_states=True)
+                hidden_states = outputs.hidden_states
+                if hidden_states:
+                    cls_vec = hidden_states[-1][:, 0, :].squeeze()
+                else:
+                    cls_vec = outputs.logits.squeeze()
+            return cls_vec.cpu().tolist()
+        except Exception as e:
+            logger.debug(f"Embedding extraction failed: {e}")
+            return None
+
 
 modernbert_classifier = ModernBERTClassifierService()
