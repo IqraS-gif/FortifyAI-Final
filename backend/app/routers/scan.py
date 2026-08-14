@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any
 from app.services.guardrail_pipeline import guardrail_pipeline
 from app.services.document_scanner import document_scanner
 from app.services.web_scanner import web_scanner
+from app.services.pii_scanner_service import pii_scanner_service
 
 router = APIRouter(prefix="/scan", tags=["Scan"])
 
@@ -16,6 +17,22 @@ class TextScanRequest(BaseModel):
     sensitivity_profile: Optional[str] = "BALANCED"
     custom_threshold: Optional[float] = None
     context: Optional[Dict[str, Any]] = None
+
+class PiiScanRequest(BaseModel):
+    text: str
+    mask_mode: Optional[str] = "tag"
+
+@router.post("/pii")
+async def scan_pii(req: PiiScanRequest):
+    """
+    Scan text for PII data leakage using Isotonic/deberta-v3-base_finetuned_ai4privacy_v2
+    combined with Verhoeff/Luhn checksum validators and regex recognizers.
+    """
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="Input text cannot be empty.")
+    
+    result = pii_scanner_service.scan(text=req.text.strip(), mask_mode=req.mask_mode or "tag")
+    return result
 
 @router.post("/text")
 async def scan_text_prompt(req: TextScanRequest):
@@ -30,6 +47,7 @@ async def scan_text_prompt(req: TextScanRequest):
         context=req.context
     )
     return result
+
 
 @router.post("/document")
 async def scan_document_file(
