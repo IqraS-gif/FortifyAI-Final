@@ -92,10 +92,11 @@ Watch the stepper progress through the 9 modules in real-time. Once the scan com
 ---
 
 ## Output Artifacts
-Every successful scan automatically generates persistent reports in the `outputs/` directory:
-- `outputs/raw_json/<timestamp>.json`: Full machine-readable telemetry.
-- `outputs/reports/<timestamp>.pdf`: Human-readable, OWASP-mapped risk report.
-- `outputs/heatmaps/<timestamp>.png`: Visual UMAP 2D projection of the vector space indicating where the anomalies live.
+Every successful scan automatically generates persistent reports in the root directory:
+- `llm08_scan_report_<timestamp>.json`: Full machine-readable telemetry.
+- `llm08_scan_report_<timestamp>.pdf`: Human-readable, OWASP-mapped risk report.
+- `llm08_scan_report_<timestamp>.heatmap.json`: Structured UMAP 2D projection data for rendering the interactive vector space heatmap in the dashboard.
+- `findings_<timestamp>.csv`: Complete dataset of all flagged vectors (generated if findings exceed the PDF table limits).
 
 ---
 
