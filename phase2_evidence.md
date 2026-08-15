@@ -67,12 +67,15 @@ Weighted check: `100×0.30 + 20×0.20 + 67×0.25 + 13×0.15 + 25×0.10 = 55.2` �
 
 ---
 
-### Heatmap + PDF Export
+### Interactive Heatmap + PDF Export
 
-![Bottom of dashboard — heatmap and export](C:/Users/Admin/.gemini/antigravity-ide/brain/1f1c0107-2ad7-47e1-a9c9-0cc529263c79/bottom_dashboard_1786791656292.png)
+![Bottom of dashboard — interactive heatmap and export](C:/Users/Admin/.gemini/antigravity-ide/brain/1f1c0107-2ad7-47e1-a9c9-0cc529263c79/bottom_dashboard_1786791656292.png)
 
 **What's visible:**
-- UMAP plot loaded: blue dot cluster (normal vectors, two collections) + red star cluster (anomalous/poisoned vectors)
+- Interactive Plotly UMAP scatter plot loaded via `.heatmap.json` data.
+- Categorical colors mapping vectors to their specific tenant namespaces.
+- Red stars marking anomalous vectors, with interactive tooltips showing `record_id`, `anomaly_score`, and payload previews.
+- Interactive controls (zoom, pan, autoscale) and "Anomalies only" toggle.
 - "📄 Download Full PDF Report" button
 - Footer: "LLM08 Vector Security Scanner · Phase 7 Complete · 69/69 tests passing"
 
