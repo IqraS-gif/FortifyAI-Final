@@ -40,9 +40,17 @@ If you want to evaluate this scanner locally, we have provided an automated seed
 - **PowerShell 5.1+** (Windows)
 
 ### Step 1: Start Qdrant
-The repository ships with the standalone Windows Qdrant binary (`qdrant.exe`).
-1. Open PowerShell in the root directory.
-2. Run the start script:
+The scanner requires a running instance of Qdrant. You can start one using either Docker or the Windows standalone binary.
+
+**Option A: Docker (Recommended)**
+```bash
+docker run -p 6333:6333 -p 6334:6334 -d qdrant/qdrant
+```
+
+**Option B: Windows Standalone Binary**
+1. Download the latest `qdrant-x86_64-pc-windows-msvc.zip` from [Qdrant Releases](https://github.com/qdrant/qdrant/releases).
+2. Extract it and place `qdrant.exe` into a new folder named `qdrant_bin/` in the project root.
+3. Run the provided start script:
    ```powershell
    .\scripts\start_qdrant.ps1
    ```
