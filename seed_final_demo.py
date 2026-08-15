@@ -221,8 +221,8 @@ def _run_seed(adapter: QdrantAdapter, output_path: str, use_transformer: bool) -
     with open(resolved, "w") as f:
         yaml.dump(config, f, sort_keys=False)
 
-    print(f"\n✓ Qdrant seeded successfully.")
-    print(f"✓ Config written to: {resolved}")
+    print(f"\n[SUCCESS] Qdrant seeded successfully.")
+    print(f"[SUCCESS] Config written to: {resolved}")
     print(f"\nRun the scan with:")
     print(f"  python -m llm08_scanner scan --config {resolved}\n")
 
