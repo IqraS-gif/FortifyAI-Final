@@ -1,0 +1,91 @@
+# ==============================================================================
+# TEST FIXTURE: tenant_isolation_broken.yaml
+#
+# PURPOSE: Deliberately misconfigured fixture used by the ACL Fuzzer test
+#          to PROVE that cross-tenant leakage is detected.
+#
+# WHAT IS BROKEN HERE:
+#   1. Both tenants share the same Qdrant collection name → any query from
+#      tenant_a will retrieve tenant_b's documents, and vice versa.
+#   2. Tokens are set to null → the ACL Fuzzer can impersonate any tenant
+#      without a valid credential check.
+#   3. No denied_fields defined → metadata field-level ACL is effectively
+#      disabled; all fields are readable by any tenant.
+#
+# EXPECTED SCANNER BEHAVIOR:
+#   - acl_fuzzer MUST report ≥1 cross-tenant leakage finding
+#   - acl_simulator MUST report at least one denied-field policy violation
+#   - Overall risk score MUST be CRITICAL or HIGH
+#
+# DO NOT use this fixture against a real production system.
+# ==============================================================================
+
+scanner:
+  vector_db:
+    type: qdrant
+    host: localhost
+    port: 6333
+    grpc_port: 6334
+    api_key: null
+    tls: false
+    timeout_seconds: 30
+
+  embedding:
+    model: sentence-transformers/all-MiniLM-L6-v2
+    device: cpu
+    dimension: 384
+    batch_size: 32
+    normalize: true
+
+  tenants:
+    # BROKEN: Both tenants point to the SAME collection.
+    # Any query from tenant_a retrieves tenant_b's data.
+    - name: tenant_a
+      collection: shared_collection_BROKEN   # <-- same as tenant_b
+      token: null                            # <-- no token; auth bypass
+      description: "Finance (misconfigured — shares collection with HR)"
+
+    - name: tenant_b
+      collection: shared_collection_BROKEN   # <-- same as tenant_a
+      token: null                            # <-- no token; auth bypass
+      description: "HR (misconfigured — shares collection with Finance)"
+
+  acl_rules:
+    # BROKEN: No denied_fields defined for either tenant.
+    # All metadata fields are readable by any tenant.
+    - tenant: tenant_a
+      allowed_fields: [title, summary, department, pii, salary]   # pii and salary should be denied
+      denied_fields:  []                     # <-- empty; nothing is protected
+      ip_allowlist:   []
+
+    - tenant: tenant_b
+      allowed_fields: [title, summary, department, pii, salary]
+      denied_fields:  []
+      ip_allowlist:   []
+
+  scoring_weights:
+    acl_fuzzer: 0.30
+    inversion:  0.20
+    poisoning:  0.25
+    drift:      0.15
+    probe:      0.10
+
+  thresholds:
+    collision_threshold: 0.98
+    mahalanobis_sigma: 3.0
+    dp_epsilon: 1.0
+    poisoning_top_k: 10
+    probe_neighbor_k: 5
+    isolation_forest_contamination: 0.05
+
+  probe_payloads:
+    seed_phrases: []
+    paraphrase_variants_per_seed: 5
+
+  output:
+    report_dir:    ./outputs/reports
+    heatmap_dir:   ./outputs/heatmaps
+    raw_json_dir:  ./outputs/raw_json
+    generate_pdf:     false     # Skip PDF in unit test runs
+    generate_heatmap: false     # Skip heatmap in unit test runs
+    timestamp_format: "%Y%m%d_%H%M%S"

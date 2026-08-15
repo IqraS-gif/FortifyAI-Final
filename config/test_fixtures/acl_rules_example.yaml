@@ -1,0 +1,85 @@
+# ==============================================================================
+# TEST FIXTURE: acl_rules_example.yaml
+#
+# PURPOSE: Reference example of a realistic ACL rule set for the ACL Simulator.
+#          Not used directly by the scanner; imported by the ACL Simulator
+#          during integration tests to verify policy enforcement logic.
+#
+# STRUCTURE:
+#   Each rule entry defines:
+#     - tenant:         matches a name from the tenants list
+#     - allowed_fields: metadata fields this tenant may read
+#     - denied_fields:  metadata fields this tenant MUST NOT read
+#     - ip_allowlist:   CIDR blocks allowed to query (empty = no restriction)
+#
+# The ACL Simulator will attempt to access denied_fields on behalf of each
+# tenant and record any successful reads as policy violations.
+# ==============================================================================
+
+acl_rules:
+
+  - tenant: tenant_a
+    description: "Finance — can see financial summaries, NOT HR/PII data"
+    allowed_fields:
+      - title
+      - summary
+      - department
+      - document_date
+      - budget_category
+    denied_fields:
+      - pii
+      - ssn
+      - salary
+      - employee_record
+      - internal_id
+      - medical_notes
+    ip_allowlist:
+      - "10.0.1.0/24"    # Finance VLAN
+      - "127.0.0.1/32"   # Localhost (for testing)
+
+  - tenant: tenant_b
+    description: "HR — can see employee data, NOT financial budget codes"
+    allowed_fields:
+      - title
+      - summary
+      - department
+      - employee_id
+      - hire_date
+      - performance_band
+    denied_fields:
+      - salary
+      - budget_code
+      - revenue_forecast
+      - cost_center
+      - ssn
+    ip_allowlist:
+      - "10.0.2.0/24"    # HR VLAN
+      - "127.0.0.1/32"
+
+  - tenant: tenant_c
+    description: "Engineering — read-only access to technical docs, no business data"
+    allowed_fields:
+      - title
+      - summary
+      - tech_domain
+      - api_version
+      - component_name
+    denied_fields:
+      - salary
+      - budget_code
+      - pii
+      - ssn
+      - employee_record
+      - revenue_forecast
+    ip_allowlist:
+      - "10.0.3.0/24"    # Engineering VLAN
+      - "127.0.0.1/32"
+
+# ==============================================================================
+# EXPECTED ACL SIMULATOR BEHAVIOR against this rule set:
+#   - Querying tenant_a for field 'ssn'          → VIOLATION (denied)
+#   - Querying tenant_a for field 'title'        → ALLOWED
+#   - Querying tenant_b for field 'budget_code'  → VIOLATION (denied)
+#   - Querying tenant_b for field 'employee_id'  → ALLOWED
+#   - Cross-tenant: tenant_a querying tenant_b collection → VIOLATION (wrong token)
+# ==============================================================================

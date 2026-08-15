@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-surface-900 text-white;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-600 rounded-full; }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-800/80 backdrop-blur-md border border-surface-600/50 rounded-2xl p-6 shadow-2xl shadow-black/40 transition-all duration-300;
+  }
+
+  .card-hoverable {
+    @apply hover:-translate-y-1 hover:shadow-accent/10 hover:border-surface-600;
+  }
+
+  .severity-badge {
+    @apply text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider backdrop-blur-sm;
+  }
+  .severity-CRITICAL { @apply bg-severity-critical/15 text-severity-critical border border-severity-critical/30 shadow-[0_0_10px_rgba(255,42,95,0.2)]; }
+  .severity-HIGH     { @apply bg-severity-high/15 text-severity-high border border-severity-high/30 shadow-[0_0_10px_rgba(255,123,0,0.2)]; }
+  .severity-MEDIUM   { @apply bg-severity-medium/15 text-severity-medium border border-severity-medium/30 shadow-[0_0_10px_rgba(255,200,0,0.2)]; }
+  .severity-LOW      { @apply bg-severity-low/15 text-severity-low border border-severity-low/30 shadow-[0_0_10px_rgba(0,230,118,0.2)]; }
+  .severity-INFO     { @apply bg-severity-info/15 text-severity-info border border-severity-info/30 shadow-[0_0_10px_rgba(77,136,255,0.2)]; }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-accent to-accent-light text-white font-bold px-5 py-2.5 rounded-xl
+           hover:shadow-[0_0_20px_rgba(110,86,207,0.4)] hover:brightness-110 active:scale-95 
+           transition-all duration-300
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none;
+  }
+
+  .btn-ghost {
+    @apply border border-surface-600 text-gray-300 font-medium px-4 py-2 rounded-xl
+           hover:bg-surface-700 hover:text-white hover:border-surface-600
+           active:scale-95 transition-all duration-300;
+  }
+
+  @media print {
+    html {
+      @apply bg-white text-black;
+    }
+    .card {
+      @apply bg-white border border-gray-300 shadow-none break-inside-avoid text-black;
+    }
+    .severity-badge {
+      @apply border border-gray-300 bg-transparent text-black shadow-none;
+    }
+    .severity-CRITICAL { @apply text-red-700 border-red-700 font-bold; }
+    .severity-HIGH     { @apply text-orange-600 border-orange-600 font-bold; }
+    .severity-MEDIUM   { @apply text-yellow-600 border-yellow-600 font-bold; }
+    .severity-LOW      { @apply text-green-700 border-green-700 font-bold; }
+    .severity-INFO     { @apply text-blue-700 border-blue-700 font-bold; }
+    
+    * {
+      @apply text-black !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+}
+

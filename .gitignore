@@ -1,0 +1,63 @@
+# ==============================================================================
+# LLM08 Scanner — .gitignore
+# ==============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# HuggingFace model cache (large; download on first run)
+.cache/
+
+# Generated scan outputs (kept locally, not committed)
+outputs/reports/*.pdf
+outputs/reports/*.json
+outputs/heatmaps/*.html
+outputs/heatmaps/*.png
+outputs/raw_json/*.json
+
+# User config (may contain secrets — only example is committed)
+config/config.yaml
+
+# Docker volumes
+qdrant_storage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Qdrant Database
+qdrant_bin/
+storage/
+snapshots/
+
+# Scan Reports & Temp Files
+llm08_scan_report_*
+findings_*.csv
+scratch/
+qdrant.zip

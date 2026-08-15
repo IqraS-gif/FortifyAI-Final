@@ -1,0 +1,126 @@
+# ==============================================================================
+# LLM08 Vector & Embedding Security Scanner — Example Configuration
+#
+# Copy this file to config/config.yaml and edit for your environment.
+# This file is validated against config/config.schema.json at startup.
+#
+# Lines starting with '#' are comments explaining each field.
+# Fields with defaults can be omitted; they are included here for clarity.
+# ==============================================================================
+
+scanner:
+
+  # ----------------------------------------------------------------------------
+  # Vector Database Connection
+  # Currently supported: qdrant | weaviate | pgvector
+  # ----------------------------------------------------------------------------
+  vector_db:
+    type: qdrant
+    host: localhost
+    port: 6333           # Qdrant REST API port
+    grpc_port: 6334      # Qdrant gRPC port (set null to disable)
+    api_key: null        # null = no authentication (local dev)
+    tls: false           # Set true if connecting over HTTPS
+    timeout_seconds: 30
+
+  # ----------------------------------------------------------------------------
+  # Embedding Model
+  # Must match the model used to populate the target vector DB collections.
+  # Supported: any sentence-transformers model ID from HuggingFace.
+  # The model will be downloaded on first run to ~/.cache/huggingface/
+  # ----------------------------------------------------------------------------
+  embedding:
+    model: sentence-transformers/all-MiniLM-L6-v2
+    device: cpu          # cpu | cuda | mps
+    dimension: 384       # Must match the model's output dimension
+    batch_size: 32
+    normalize: true      # L2-normalize before storage (required for DP layer)
+
+  # ----------------------------------------------------------------------------
+  # Tenants / Namespaces
+  # Each tenant maps to one Qdrant collection. The scanner will test for
+  # cross-tenant data leakage between all pairs of tenants listed here.
+  # Minimum 1 tenant required; add more for meaningful isolation testing.
+  # ----------------------------------------------------------------------------
+  tenants:
+    - name: tenant_a
+      collection: collection_tenant_a
+      token: token_alpha_secret        # Simulated auth token (ACL Fuzzer)
+      description: "Finance department documents"
+
+    - name: tenant_b
+      collection: collection_tenant_b
+      token: token_beta_secret
+      description: "HR department documents"
+
+  # ----------------------------------------------------------------------------
+  # ACL Rules (Row-Level Security)
+  # Defines which metadata fields each tenant is allowed to read.
+  # The ACL Simulator tests whether these rules are correctly enforced.
+  # ----------------------------------------------------------------------------
+  acl_rules:
+    - tenant: tenant_a
+      allowed_fields: [title, summary, department]
+      denied_fields:  [pii, ssn, internal_id, salary]
+      ip_allowlist:   []               # Empty = no IP restriction in simulation
+
+    - tenant: tenant_b
+      allowed_fields: [title, summary, department, employee_id]
+      denied_fields:  [salary, budget_code]
+      ip_allowlist:   []
+
+  # ----------------------------------------------------------------------------
+  # Scoring Weights
+  # Relative weight of each module's score in the overall risk calculation.
+  # Must sum to 1.0 (enforced at runtime by the ScoringEngine).
+  # ----------------------------------------------------------------------------
+  scoring_weights:
+    acl_fuzzer: 0.30    # Cross-tenant leakage is the highest-weight risk
+    inversion:  0.20    # Vector→text reconstruction risk
+    poisoning:  0.25    # Adversarial injection risk
+    drift:      0.15    # Distribution outlier / tampering risk
+    probe:      0.10    # Semantic boundary-crossing risk
+
+  # ----------------------------------------------------------------------------
+  # Detection Thresholds
+  # ----------------------------------------------------------------------------
+  thresholds:
+    # Cosine similarity above which two cross-tenant results are a "collision"
+    collision_threshold: 0.98
+
+    # Mahalanobis distance above which a vector is flagged as an outlier (σ)
+    mahalanobis_sigma: 3.0
+
+    # Differential-privacy noise budget (ε). Lower = more noise = stronger privacy.
+    # Recommended range: 0.1 (strong) to 10.0 (weak). Default 1.0 is a common baseline.
+    dp_epsilon: 1.0
+
+    # top-k used when measuring poisoned-vector over-retrieval rate
+    poisoning_top_k: 10
+
+    # Nearest neighbors retrieved per probe query
+    probe_neighbor_k: 5
+
+    # Expected fraction of outliers for IsolationForest (0.05 = 5%)
+    isolation_forest_contamination: 0.05
+
+  # ----------------------------------------------------------------------------
+  # Probe Payload Configuration
+  # If seed_phrases is empty, the built-in payload library defaults are used.
+  # ----------------------------------------------------------------------------
+  probe_payloads:
+    seed_phrases: []     # Add domain-specific seeds here if desired
+    paraphrase_variants_per_seed: 5
+
+  # ----------------------------------------------------------------------------
+  # Output Settings
+  # All paths are relative to the directory from which the scanner is run,
+  # or can be set as absolute paths.
+  # ----------------------------------------------------------------------------
+  output:
+    report_dir:    ./outputs/reports
+    heatmap_dir:   ./outputs/heatmaps
+    raw_json_dir:  ./outputs/raw_json
+    generate_pdf:     true
+    generate_heatmap: true
+    timestamp_format: "%Y%m%d_%H%M%S"

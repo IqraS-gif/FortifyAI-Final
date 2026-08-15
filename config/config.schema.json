@@ -1,0 +1,314 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://llm08-scanner/config.schema.json",
+  "title": "LLM08 Scanner Configuration",
+  "description": "Configuration schema for the LLM08 Vector & Embedding Security Scanner. Validated at startup via jsonschema before any scan begins.",
+  "type": "object",
+  "required": ["scanner"],
+  "additionalProperties": false,
+
+  "properties": {
+    "scanner": {
+      "type": "object",
+      "description": "Root scanner configuration block.",
+      "required": ["vector_db", "embedding", "tenants", "thresholds", "output"],
+      "additionalProperties": false,
+
+      "properties": {
+
+        "vector_db": {
+          "type": "object",
+          "description": "Connection settings for the target vector database.",
+          "required": ["type", "host", "port"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Vector DB backend identifier.",
+              "enum": ["qdrant", "weaviate", "pgvector"],
+              "default": "qdrant"
+            },
+            "host": {
+              "type": "string",
+              "description": "Hostname or IP of the vector DB service.",
+              "default": "localhost"
+            },
+            "port": {
+              "type": "integer",
+              "description": "REST API port.",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 6333
+            },
+            "grpc_port": {
+              "type": ["integer", "null"],
+              "description": "gRPC port (optional; Qdrant default is 6334). Set null to disable gRPC.",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 6334
+            },
+            "api_key": {
+              "type": ["string", "null"],
+              "description": "API key for authenticated vector DBs. Null for unauthenticated local instances.",
+              "default": null
+            },
+            "tls": {
+              "type": "boolean",
+              "description": "Whether to use TLS/HTTPS for the connection.",
+              "default": false
+            },
+            "timeout_seconds": {
+              "type": "number",
+              "description": "Request timeout in seconds for all vector DB operations.",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 30
+            }
+          }
+        },
+
+        "embedding": {
+          "type": "object",
+          "description": "Embedding model configuration used to encode attack queries and reconstruct vectors.",
+          "required": ["model", "dimension"],
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "HuggingFace model identifier (sentence-transformers) or 'openai:text-embedding-ada-002'.",
+              "examples": [
+                "sentence-transformers/all-MiniLM-L6-v2",
+                "sentence-transformers/all-mpnet-base-v2"
+              ]
+            },
+            "device": {
+              "type": "string",
+              "description": "Torch device for inference.",
+              "enum": ["cpu", "cuda", "mps"],
+              "default": "cpu"
+            },
+            "dimension": {
+              "type": "integer",
+              "description": "Output embedding dimension. Must match model output and vector DB collection dimension.",
+              "minimum": 1,
+              "examples": [384, 768, 1536]
+            },
+            "batch_size": {
+              "type": "integer",
+              "description": "Batch size for bulk encoding operations.",
+              "minimum": 1,
+              "maximum": 512,
+              "default": 32
+            },
+            "normalize": {
+              "type": "boolean",
+              "description": "Whether to L2-normalize embeddings before storage and comparison. Required for DP noise injection (see DD-003).",
+              "default": true
+            }
+          }
+        },
+
+        "tenants": {
+          "type": "array",
+          "description": "List of tenants/namespaces to scan. Each tenant maps to one Qdrant collection.",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "collection"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Human-readable tenant identifier used in reports.",
+                "minLength": 1
+              },
+              "collection": {
+                "type": "string",
+                "description": "Qdrant collection name for this tenant.",
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9_-]+$"
+              },
+              "token": {
+                "type": ["string", "null"],
+                "description": "Simulated auth token for this tenant (used by ACL Fuzzer to impersonate). Null if not using token-based auth simulation.",
+                "default": null
+              },
+              "description": {
+                "type": ["string", "null"],
+                "description": "Optional human-readable description of this tenant's data domain.",
+                "default": null
+              }
+            }
+          }
+        },
+
+        "acl_rules": {
+          "type": "array",
+          "description": "Row-level security rules for the ACL Simulator. Each rule defines field-level access for a tenant.",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["tenant"],
+            "additionalProperties": false,
+            "properties": {
+              "tenant": {
+                "type": "string",
+                "description": "Tenant name this rule applies to. Must match a name in the tenants list."
+              },
+              "allowed_fields": {
+                "type": "array",
+                "description": "Metadata fields this tenant is allowed to read.",
+                "items": { "type": "string" },
+                "default": []
+              },
+              "denied_fields": {
+                "type": "array",
+                "description": "Metadata fields this tenant must NOT be able to read (policy-enforced).",
+                "items": { "type": "string" },
+                "default": []
+              },
+              "ip_allowlist": {
+                "type": "array",
+                "description": "CIDR blocks allowed to query this tenant's collection. Empty = no IP restriction.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$"
+                },
+                "default": []
+              }
+            }
+          }
+        },
+
+        "scoring_weights": {
+          "type": "object",
+          "description": "Relative weights for each module's score in the overall risk aggregation. Must sum to 1.0.",
+          "additionalProperties": false,
+          "properties": {
+            "acl_fuzzer":  { "type": "number", "minimum": 0, "maximum": 1 },
+            "inversion":   { "type": "number", "minimum": 0, "maximum": 1 },
+            "poisoning":   { "type": "number", "minimum": 0, "maximum": 1 },
+            "drift":       { "type": "number", "minimum": 0, "maximum": 1 },
+            "probe":       { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "default": {
+            "acl_fuzzer": 0.30,
+            "inversion":  0.20,
+            "poisoning":  0.25,
+            "drift":      0.15,
+            "probe":      0.10
+          }
+        },
+
+        "thresholds": {
+          "type": "object",
+          "description": "Detection thresholds for anomaly scoring modules.",
+          "required": ["collision_threshold", "mahalanobis_sigma", "dp_epsilon"],
+          "additionalProperties": false,
+          "properties": {
+            "collision_threshold": {
+              "type": "number",
+              "description": "Cosine similarity above which two cross-tenant results are flagged as a near-duplicate collision.",
+              "minimum": 0.0,
+              "maximum": 1.0,
+              "default": 0.98
+            },
+            "mahalanobis_sigma": {
+              "type": "number",
+              "description": "Number of standard deviations (Mahalanobis) above which a vector is flagged as an outlier.",
+              "minimum": 1.0,
+              "maximum": 10.0,
+              "default": 3.0
+            },
+            "dp_epsilon": {
+              "type": "number",
+              "description": "Privacy budget ε for the Laplace differential-privacy noise injection. Lower = more noise = stronger privacy (but degrades utility). Typical range: 0.1–10.0.",
+              "exclusiveMinimum": 0,
+              "default": 1.0
+            },
+            "poisoning_top_k": {
+              "type": "integer",
+              "description": "top-k retrieval count used when measuring over-retrieval rate during poisoning simulation.",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10
+            },
+            "probe_neighbor_k": {
+              "type": "integer",
+              "description": "Number of nearest neighbors retrieved per probe query during semantic-neighbor attack.",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 5
+            },
+            "isolation_forest_contamination": {
+              "type": ["number", "string"],
+              "description": "Expected fraction of outliers in the dataset for IsolationForest training. Use 'auto' or a float in (0, 0.5].",
+              "default": 0.05
+            }
+          }
+        },
+
+        "probe_payloads": {
+          "type": "object",
+          "description": "Configuration for the probe generator's attack query catalog.",
+          "additionalProperties": false,
+          "properties": {
+            "seed_phrases": {
+              "type": "array",
+              "description": "Seed phrases used to generate semantic-neighbor attack queries. If empty, the payload library uses its built-in defaults.",
+              "items": { "type": "string" },
+              "default": []
+            },
+            "paraphrase_variants_per_seed": {
+              "type": "integer",
+              "description": "Number of paraphrase variants to generate per seed phrase.",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 5
+            }
+          },
+          "default": {}
+        },
+
+        "output": {
+          "type": "object",
+          "description": "Output artifact paths and format flags.",
+          "required": ["report_dir", "heatmap_dir", "raw_json_dir"],
+          "additionalProperties": false,
+          "properties": {
+            "report_dir": {
+              "type": "string",
+              "description": "Directory where PDF reports are written.",
+              "default": "./outputs/reports"
+            },
+            "heatmap_dir": {
+              "type": "string",
+              "description": "Directory where heatmap HTML and PNG files are written.",
+              "default": "./outputs/heatmaps"
+            },
+            "raw_json_dir": {
+              "type": "string",
+              "description": "Directory where raw JSON findings are written.",
+              "default": "./outputs/raw_json"
+            },
+            "generate_pdf": {
+              "type": "boolean",
+              "description": "Whether to generate a PDF report in addition to JSON.",
+              "default": true
+            },
+            "generate_heatmap": {
+              "type": "boolean",
+              "description": "Whether to generate the vector-space heatmap visualization.",
+              "default": true
+            },
+            "timestamp_format": {
+              "type": "string",
+              "description": "Python strftime format string used to timestamp output filenames.",
+              "default": "%Y%m%d_%H%M%S"
+            }
+          }
+        }
+      }
+    }
+  }
+}

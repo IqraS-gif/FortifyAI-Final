@@ -1,0 +1,28 @@
+
+# OPTIONAL: Docker Compose configuration for Qdrant.
+# Use this if you have a stable Docker Desktop environment.
+# Otherwise, use the standalone Windows binary.
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.9.3
+    container_name: llm08_qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      # Disable authentication for local development.
+      # In production, set QDRANT__SERVICE__API_KEY to a secret value.
+      QDRANT__SERVICE__API_KEY: ""
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  qdrant_storage:
+    driver: local

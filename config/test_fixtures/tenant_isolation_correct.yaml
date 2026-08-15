@@ -1,0 +1,88 @@
+# ==============================================================================
+# TEST FIXTURE: tenant_isolation_correct.yaml
+#
+# PURPOSE: Correctly configured fixture used by the ACL Fuzzer test
+#          to PROVE that correct isolation produces ZERO leakage findings.
+#
+# WHAT IS CORRECT HERE:
+#   1. Each tenant has its own distinct Qdrant collection.
+#   2. Tokens are unique per tenant, non-null (ACL Fuzzer must use correct token).
+#   3. denied_fields are explicitly defined for sensitive fields.
+#   4. ip_allowlist is populated (simulates network-level restriction).
+#
+# EXPECTED SCANNER BEHAVIOR:
+#   - acl_fuzzer MUST report 0 cross-tenant leakage findings
+#   - acl_simulator MUST report 0 denied-field policy violations
+#   - Overall risk score MUST be LOW or INFO (no critical findings)
+#
+# This fixture serves as the negative control (false-positive baseline).
+# If the scanner reports leakage against this fixture, it is a bug.
+# ==============================================================================
+
+scanner:
+  vector_db:
+    type: qdrant
+    host: localhost
+    port: 6333
+    grpc_port: 6334
+    api_key: null
+    tls: false
+    timeout_seconds: 30
+
+  embedding:
+    model: sentence-transformers/all-MiniLM-L6-v2
+    device: cpu
+    dimension: 384
+    batch_size: 32
+    normalize: true
+
+  tenants:
+    # CORRECT: Each tenant has a distinct, isolated collection.
+    - name: tenant_a
+      collection: collection_finance_a       # <-- unique collection
+      token: token_finance_a_secret_xyz      # <-- unique non-null token
+      description: "Finance department documents (correctly isolated)"
+
+    - name: tenant_b
+      collection: collection_hr_b            # <-- different collection
+      token: token_hr_b_secret_abc           # <-- different unique token
+      description: "HR department documents (correctly isolated)"
+
+  acl_rules:
+    # CORRECT: Sensitive fields are explicitly denied.
+    - tenant: tenant_a
+      allowed_fields: [title, summary, department]
+      denied_fields:  [pii, ssn, salary, internal_id]   # <-- explicitly denied
+      ip_allowlist:   ["127.0.0.1/32"]                  # <-- network-restricted
+
+    - tenant: tenant_b
+      allowed_fields: [title, summary, department, employee_id]
+      denied_fields:  [salary, budget_code, ssn]
+      ip_allowlist:   ["127.0.0.1/32"]
+
+  scoring_weights:
+    acl_fuzzer: 0.30
+    inversion:  0.20
+    poisoning:  0.25
+    drift:      0.15
+    probe:      0.10
+
+  thresholds:
+    collision_threshold: 0.98
+    mahalanobis_sigma: 3.0
+    dp_epsilon: 1.0
+    poisoning_top_k: 10
+    probe_neighbor_k: 5
+    isolation_forest_contamination: 0.05
+
+  probe_payloads:
+    seed_phrases: []
+    paraphrase_variants_per_seed: 5
+
+  output:
+    report_dir:    ./outputs/reports
+    heatmap_dir:   ./outputs/heatmaps
+    raw_json_dir:  ./outputs/raw_json
+    generate_pdf:     false
+    generate_heatmap: false
+    timestamp_format: "%Y%m%d_%H%M%S"

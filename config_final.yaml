@@ -1,0 +1,39 @@
+vector_db:
+  host: 127.0.0.1
+  port: 6333
+tenants:
+- name: tenant_a
+  collection: demo_shared_collection
+  token: null
+  acl_rules:
+    allowed_fields:
+    - department
+    denied_fields:
+    - salary
+    - malicious
+- name: tenant_b
+  collection: demo_shared_collection
+  token: null
+  acl_rules:
+    allowed_fields:
+    - department
+    denied_fields:
+    - salary
+- name: tenant_c
+  collection: demo_isolated_collection
+  token: valid_token_c
+  acl_rules:
+    allowed_fields:
+    - target
+    denied_fields: []
+scoring_weights:
+  acl_fuzzer: 0.3
+  inversion: 0.2
+  poisoning: 0.25
+  drift: 0.15
+  probe: 0.1
+thresholds:
+  inversion_overlap: 0.2
+  drift_mahalanobis_sigma: 3.0
+  collision_similarity: 0.98
+  isolation_forest_contamination: 0.05

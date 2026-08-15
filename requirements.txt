@@ -1,0 +1,41 @@
+# ==============================================================================
+# LLM08 Vector & Embedding Security Scanner — Python Dependencies
+# Pinned to minimum compatible versions. Use `pip install -r requirements.txt`
+# ==============================================================================
+
+# --- Vector Database ---
+qdrant-client==1.19.0          # pinned: must match standalone binary (qdrant_bin/qdrant.exe v1.19.0)
+
+# --- Embeddings ---
+sentence-transformers>=3.0.0
+# sentence-transformers pulls in torch; specify minimum explicitly:
+torch>=2.0.0
+
+# --- Machine Learning / Statistics ---
+scikit-learn>=1.4.0        # DBSCAN, IsolationForest, covariance (Mahalanobis)
+numpy>=1.26.0
+scipy>=1.12.0              # Mahalanobis distance, Laplace noise sampling
+
+# --- Dimensionality Reduction (heatmap visualization) ---
+umap-learn>=0.5.6          # Primary 2D projection; fallback to t-SNE if unavailable
+
+# --- Visualization ---
+matplotlib>=3.8.0          # Static PNG heatmap output
+plotly>=5.20.0             # Interactive HTML heatmap output
+
+# --- Configuration & Validation ---
+pyyaml>=6.0
+jsonschema>=4.21.0
+
+# --- CLI ---
+click>=8.1.0
+
+# --- Report Generation ---
+reportlab>=4.2.0
+
+# --- Paraphrase / NLP utilities ---
+nltk>=3.8.0                # Synonym-based paraphrase for probe generation (no API key)
+
+# --- Testing ---
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

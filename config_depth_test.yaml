@@ -1,0 +1,65 @@
+vector_db:
+  host: 127.0.0.1
+  port: 6333
+tenants:
+- name: tenant_alpha
+  collection: depth_clean_tenant_alpha
+  token: token_alpha_isolated
+  acl_rules:
+    allowed_fields:
+    - department
+    - record_id
+    denied_fields: []
+- name: tenant_beta
+  collection: depth_clean_tenant_beta
+  token: token_beta_isolated
+  acl_rules:
+    allowed_fields:
+    - department
+    - record_id
+    denied_fields: []
+- name: tenant_gamma
+  collection: depth_mixed_shared_collection
+  token: token_gamma_valid
+  acl_rules:
+    allowed_fields:
+    - tenant
+    - value
+    denied_fields:
+    - confidential_field
+- name: tenant_delta
+  collection: depth_mixed_shared_collection
+  token: token_delta_valid
+  acl_rules:
+    allowed_fields:
+    - tenant
+    - value
+    denied_fields:
+    - confidential_field
+- name: tenant_epsilon
+  collection: depth_vuln_shared_collection
+  token: null
+  acl_rules:
+    allowed_fields:
+    - department
+    denied_fields:
+    - salary
+- name: tenant_zeta
+  collection: depth_vuln_shared_collection
+  token: null
+  acl_rules:
+    allowed_fields:
+    - department
+    denied_fields:
+    - salary
+scoring_weights:
+  acl_fuzzer: 0.3
+  inversion: 0.2
+  poisoning: 0.25
+  drift: 0.15
+  probe: 0.1
+thresholds:
+  inversion_overlap: 0.2
+  drift_mahalanobis_sigma: 3.0
+  collision_similarity: 0.98
+  isolation_forest_contamination: 0.05
