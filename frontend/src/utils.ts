@@ -1,20 +1,20 @@
 export function severityColor(s: string): string {
   switch (s.toUpperCase()) {
-    case 'CRITICAL': return '#ff2a5f';
-    case 'HIGH':     return '#ff7b00';
-    case 'MEDIUM':   return '#ffc800';
-    case 'LOW':      return '#00e676';
-    default:         return '#4d88ff';
+    case 'CRITICAL': return '#dc2626';
+    case 'HIGH':     return '#d97706';
+    case 'MEDIUM':   return '#ca8a04';
+    case 'LOW':      return '#059669';
+    default:         return '#2563eb';
   }
 }
 
 export function severityBg(s: string): string {
   switch (s.toUpperCase()) {
-    case 'CRITICAL': return 'bg-severity-critical/10 text-severity-critical border-severity-critical/30';
-    case 'HIGH':     return 'bg-severity-high/10 text-severity-high border-severity-high/30';
-    case 'MEDIUM':   return 'bg-severity-medium/10 text-severity-medium border-severity-medium/30';
-    case 'LOW':      return 'bg-severity-low/10 text-severity-low border-severity-low/30';
-    default:         return 'bg-severity-info/10 text-severity-info border-severity-info/30';
+    case 'CRITICAL': return 'bg-red-50 text-red-700 border-red-200';
+    case 'HIGH':     return 'bg-amber-50 text-amber-800 border-amber-200';
+    case 'MEDIUM':   return 'bg-yellow-50 text-yellow-800 border-yellow-200';
+    case 'LOW':      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    default:         return 'bg-blue-50 text-blue-700 border-blue-200';
   }
 }
 
@@ -33,20 +33,7 @@ export const MODULE_LABELS: Record<string, string> = {
   poison_classifier:'Poison Classifier',
 };
 
-export const MODULE_ICONS: Record<string, string> = {
-  acl_fuzzer:        '🔐',
-  inversion:         '🔍',
-  poisoning:         '☣️',
-  drift:             '📈',
-  probe:             '🎯',
-  dp_noise_injector: '🔊',
-  acl_simulator:     '🛡️',
-  collision_scorer:  '💥',
-  poison_classifier: '🧬',
-};
-
 export function formatTimestamp(ts: string): string {
-  // "20260815T095902_434934+0000" → readable
   try {
     const clean = ts.replace(/(\d{8})T(\d{2})(\d{2})(\d{2})_.*/, '$1T$2:$3:$4Z');
     const d = new Date(clean);
