@@ -5,7 +5,7 @@ colorFrom: blue
 colorTo: indigo
 sdk: gradio
 sdk_version: 4.44.0
-app_file: app.py
+app_file: hf_app.py
 pinned: false
 ---
 
