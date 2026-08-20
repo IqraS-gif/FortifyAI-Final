@@ -88,42 +88,49 @@ class DatabaseManager:
         self.client = None
         self.db = None
         self.is_connected = False
+        self.attempted = False
         self.fallback_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data_storage")
         self.fallback_collections: Dict[str, InMemoryMongoFallbackCollection] = {}
 
     def connect(self):
-        """Attempt MongoDB Atlas connection with certifi CA bundle for Python 3.13+ TLS compatibility."""
+        """Attempt MongoDB connection with fast fallback for Python 3.13+ compatibility."""
+        if self.attempted and not self.is_connected:
+            return
+
+        self.attempted = True
         uri = settings.MONGODB_URI
+        use_tls = uri.startswith("mongodb+srv://") or "tls=true" in uri.lower() or "ssl=true" in uri.lower()
 
         connect_kwargs = dict(
             host=uri,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=10000,
-            socketTimeoutMS=20000,
-            tls=True,
-            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=1500,
+            connectTimeoutMS=2000,
+            socketTimeoutMS=5000,
             retryWrites=True,
         )
+        if use_tls:
+            connect_kwargs["tls"] = True
+            connect_kwargs["tlsCAFile"] = certifi.where()
 
-        for attempt in range(1, 4):
+        for attempt in range(1, 3):
             try:
                 client = pymongo.MongoClient(**connect_kwargs)
                 client.admin.command('ping')
                 self.client = client
                 self.db = client[settings.DB_NAME]
                 self.is_connected = True
-                logger.info(f"Connected to MongoDB Atlas [DB: {settings.DB_NAME}] on attempt {attempt}")
+                logger.info(f"Connected to MongoDB [DB: {settings.DB_NAME}] on attempt {attempt}")
                 return
             except (ServerSelectionTimeoutError, ConfigurationError, Exception) as err:
-                logger.warning(f"MongoDB connection attempt {attempt}/3 failed: {type(err).__name__}: {str(err)[:200]}")
-                if attempt < 3:
-                    time.sleep(attempt * 1.5)
+                logger.warning(f"MongoDB connection attempt {attempt}/2 failed: {type(err).__name__}: {str(err)[:150]}")
+                if attempt < 2:
+                    time.sleep(0.5)
 
-        logger.warning("MongoDB unavailable after 3 attempts. Using persistent embedded storage fallback.")
+        logger.warning("MongoDB unavailable. Using persistent embedded storage fallback.")
         self.is_connected = False
 
     def get_collection(self, collection_name: str):
-        if not self.is_connected:
+        if not self.is_connected and not self.attempted:
             self.connect()
 
         if self.is_connected and self.db is not None:
@@ -137,3 +144,4 @@ class DatabaseManager:
 
 db_manager = DatabaseManager()
 db_manager.connect()
+

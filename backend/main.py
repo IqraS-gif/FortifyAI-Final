@@ -1,8 +1,16 @@
+import sys
+import asyncio
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import scan, projects, retrain, analytics, redteam
+
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except Exception:
+        pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

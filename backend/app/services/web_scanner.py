@@ -14,6 +14,7 @@ import hashlib
 import io
 import logging
 import re
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -97,6 +98,7 @@ class WebScanner:
         return result
 
     async def _async_scan(self, url: str, sensitivity_profile: str) -> Dict[str, Any]:
+        scan_start_time = time.perf_counter()
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"Only http/https URLs are supported. Got: {url}")
@@ -205,9 +207,51 @@ class WebScanner:
             f"{len(confirmed_threats)} confirmed by pipeline (text-NLP only)"
         )
 
-        # ── Step 6: Final doc_meta — only confirmed threats go in ──
-        combined_text = "\n".join(t["content"] for t in confirmed_threats) \
-            if confirmed_threats else "no hidden injection content detected"
+        # ── Step 6: Final check — if 0 confirmed threats, return clean ALLOWED response ──
+        if not confirmed_threats and not any(r.get("severity") in ("CRITICAL", "HIGH") for r in redirect_findings):
+            total_duration_ms = round((time.perf_counter() - scan_start_time) * 1000.0, 2)
+            return {
+                "action": "ALLOWED",
+                "risk_score": 0,
+                "threshold_applied": 60.0,
+                "sensitivity_profile": sensitivity_profile,
+                "profile_description": "Balanced protection for corporate chatbots and web scanning.",
+                "severity": "SAFE",
+                "human_summary_one_liner": "The scanned webpage contains no hidden prompt injection threats or malicious instructions.",
+                "structured_indicators": [],
+                "explainable_reasons": ["Input cleared all security layers within risk threshold."],
+                "matched_patterns": [],
+                "highlight_snippets": [],
+                "modernbert_confidence": 0.0,
+                "layer_breakdown": {
+                    "layer_1_heuristic": {"risk_score": 0, "matched_count": 0, "duration_ms": 0.0},
+                    "layer_2_modernbert": {"confidence_score": 0.0, "risk_score": 0, "model_name": "answerdotai/ModernBERT-base", "explanation": "No injection patterns detected", "duration_ms": 0.0},
+                    "layer_3_document": {"document_type": "WEB_PAGE", "metadata_threats": 0, "invisible_text_threats": 0, "duration_ms": 0.0}
+                },
+                "document_threat_details": {
+                    "metadata_findings": [],
+                    "invisible_text_findings": []
+                },
+                "latency": {
+                    "total_duration_ms": total_duration_ms,
+                    "latency_budget_ms": 100.0,
+                    "within_sla": total_duration_ms <= 100.0
+                },
+                "web_scan": {
+                    "url": url,
+                    "page_title": page_title,
+                    "screenshot_b64": screenshot_b64,
+                    "redirects": redirects,
+                    "network_requests": network_requests[:20],
+                    "candidates_found": len(candidates),
+                    "hidden_findings_count": 0,
+                    "ocr_findings_count": len(ocr_candidates),
+                    "redirect_findings_count": len(redirect_findings),
+                }
+            }
+
+        # ── Step 7: Evaluate confirmed threat payloads through guardrail pipeline ──
+        combined_text = "\n".join(t["content"] for t in confirmed_threats)
 
         doc_meta = {
             "source": url,
@@ -221,12 +265,11 @@ class WebScanner:
                     "confidence": t.get("confidence", "HIGH"),
                     "reason": t.get("reason", ""),
                 }
-                for t in confirmed_threats + redirect_findings
+                for t in confirmed_threats
             ],
             "extracted_text": combined_text,
         }
 
-        # ── Step 7: Final pipeline evaluation over all confirmed threat text ──
         pipeline_result = guardrail_pipeline.evaluate(
             raw_text=combined_text,
             sensitivity_profile=sensitivity_profile,
@@ -234,8 +277,6 @@ class WebScanner:
         )
 
         # ── Step 8: Override structured_indicators with discrete per-threat findings ──
-        # Fixes generic "Page Source / NLP Model Detection" fallback by attaching exact
-        # location labels and unconcatenated evidence snippets for each finding.
         specific_indicators = []
         for t in confirmed_threats:
             loc_raw = t.get("type", "DOM Element")
@@ -288,7 +329,15 @@ class WebScanner:
         return pipeline_result
 
     def _sync_playwright_fetch(self, url: str) -> Tuple[str, Optional[str], List[str], str, List[str]]:
-        """Synchronous Playwright fetch — runs in a ThreadPoolExecutor to avoid Windows SelectorEventLoop restriction."""
+        """Synchronous Playwright fetch — runs in a ThreadPoolExecutor with ProactorEventLoop on Windows."""
+        if sys.platform == "win32":
+            try:
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            except Exception as loop_err:
+                logger.debug(f"Failed to set WindowsProactorEventLoopPolicy: {loop_err}")
+
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,

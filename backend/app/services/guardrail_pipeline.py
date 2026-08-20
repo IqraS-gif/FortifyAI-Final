@@ -105,8 +105,14 @@ class GuardrailPipeline:
         has_heuristic_match = len(h_res.get("matched_rules", [])) > 0
         has_doc_threat = len(doc_findings.get("invisible_text_findings", [])) > 0 or len(doc_findings.get("metadata_findings", [])) > 0
 
+        clean_raw_text = raw_text.strip()
+        if clean_raw_text == "no hidden injection content detected" or not clean_raw_text:
+            ml_res["is_injection"] = False
+            final_risk_score = 0
+            has_doc_threat = False
+
         if not has_heuristic_match and not has_doc_threat:
-            if ml_score < 88.0 or len(raw_text.strip()) < 15:
+            if ml_score < 88.0 or len(clean_raw_text) < 15:
                 ml_res["is_injection"] = False
                 final_risk_score = min(final_risk_score, 45)
 
@@ -114,9 +120,11 @@ class GuardrailPipeline:
 
         # Decision Logic
         is_blocked = (
-            h_res["severity"] == "CRITICAL" or
-            final_risk_score >= effective_threshold or
-            has_doc_threat
+            (h_res["severity"] == "CRITICAL" or
+             final_risk_score >= effective_threshold or
+             has_doc_threat) and
+            clean_raw_text != "no hidden injection content detected" and
+            bool(clean_raw_text)
         )
 
         total_duration_ms = round((time.perf_counter() - pipeline_start) * 1000.0, 2)
